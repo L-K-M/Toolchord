@@ -349,7 +349,7 @@ public final class PaletteSession {
     public func copyPrimary() -> CopyOutcome {
         guard let output = copyableOutput, let command = selectedCommand else { return .unavailable }
         isActionsMenuOpen = false
-        guard clipboard.writeText(output.primaryText) else {
+        guard clipboard.writeText(output.primaryText, sensitivity: output.sensitivity) else {
             post(.error, "Couldn’t copy to the clipboard. Try again.")
             return .failed
         }
@@ -360,8 +360,10 @@ public final class PaletteSession {
     /// Copies one result field and keeps the panel open.
     @discardableResult
     public func copyField(_ fieldID: String) -> CopyOutcome {
-        guard let field = copyableOutput?.fields.first(where: { $0.id == fieldID && $0.isCopyable }) else { return .unavailable }
-        guard clipboard.writeText(field.value) else {
+        guard let output = copyableOutput, let field = output.fields.first(where: { $0.id == fieldID && $0.isCopyable }) else {
+            return .unavailable
+        }
+        guard clipboard.writeText(field.value, sensitivity: output.sensitivity) else {
             post(.error, "Couldn’t copy to the clipboard. Try again.")
             return .failed
         }

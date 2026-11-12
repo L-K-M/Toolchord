@@ -29,7 +29,7 @@ public struct BackgroundEvaluator: ToolEvaluating {
 /// Writes text to the system clipboard. Returns whether the write succeeded.
 @MainActor
 public protocol ClipboardWriting: AnyObject {
-    func writeText(_ text: String) -> Bool
+    func writeText(_ text: String, sensitivity: ClipboardSensitivity) -> Bool
 }
 
 /// Preferences the session reads. Never receives payloads or results.
@@ -73,15 +73,18 @@ public final class MemoryPreferences: SessionPreferences {
 @MainActor
 public final class MemoryClipboard: ClipboardWriting {
     public private(set) var writes: [String] = []
+    /// The sensitivity of each write, in the same order as ``writes``.
+    public private(set) var sensitivities: [ClipboardSensitivity] = []
     public var failsWrites = false
 
     public init() {}
 
     public var text: String? { writes.last }
 
-    public func writeText(_ text: String) -> Bool {
+    public func writeText(_ text: String, sensitivity: ClipboardSensitivity) -> Bool {
         guard !failsWrites else { return false }
         writes.append(text)
+        sensitivities.append(sensitivity)
         return true
     }
 }

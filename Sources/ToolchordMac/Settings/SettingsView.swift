@@ -105,7 +105,7 @@ struct SettingsView: View {
 
             Section("Privacy") {
                 Label {
-                    Text("Toolchord processes everything on this Mac and has no network access. It reads the clipboard only when you paste, keeps your input in memory only while the palette is open, and never stores or logs it. Results you copy go to the system clipboard, which macOS may share with your other devices through Universal Clipboard.")
+                    Text("Toolchord processes everything on this Mac and has no network access. It reads the clipboard only when you paste, keeps your input in memory only while the palette is open, and never stores or logs it. Results you copy go to the system clipboard, which macOS may share with your other devices through Universal Clipboard. Generated random strings stay on this Mac and are marked as confidential for clipboard history apps.")
                         .fixedSize(horizontal: false, vertical: true)
                 } icon: {
                     Image(systemName: "lock.shield")

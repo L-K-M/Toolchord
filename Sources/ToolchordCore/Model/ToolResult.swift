@@ -72,6 +72,8 @@ public struct ToolOutput: Sendable, Hashable {
     public var warnings: [String]
     /// A color to show beside the result, for color conversions.
     public var swatch: ColorSwatch?
+    /// How copies of the primary text and fields are written.
+    public var sensitivity: ClipboardSensitivity
 
     public init(
         primaryText: String,
@@ -81,7 +83,8 @@ public struct ToolOutput: Sendable, Hashable {
         fields: [ResultField] = [],
         warnings: [String] = [],
         swatch: ColorSwatch? = nil,
-        statusTone: ResultField.Tone = .success
+        statusTone: ResultField.Tone = .success,
+        sensitivity: ClipboardSensitivity = .normal
     ) {
         self.primaryText = primaryText
         self.status = status
@@ -91,6 +94,7 @@ public struct ToolOutput: Sendable, Hashable {
         self.fields = fields
         self.warnings = warnings
         self.swatch = swatch
+        self.sensitivity = sensitivity
     }
 }
 
