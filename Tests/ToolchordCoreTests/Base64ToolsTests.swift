@@ -56,6 +56,25 @@ import Testing
         #expect(try run("base64.decode", " \t\r\n", options: ["ignoreWhitespace": "true"]).output?.primaryText == "")
     }
 
+    @Test func surroundingWhitespaceIsIgnored() throws {
+        // Tokens copied from a terminal or an editor usually end with a line break.
+        let fixtures = [
+            ("base64.decode", "SGVsbG8=\n"), ("base64.decode", "  SGVsbG8=\r\n"),
+            ("base64.decode", "\u{00A0}SGVsbG8=\u{2028}"), ("base64url.decode", "SGVsbG8\n"),
+            ("base64url.decode", "\tSGVsbG8=  "),
+        ]
+        for (id, input) in fixtures {
+            #expect(try run(id, input).output?.primaryText == "Hello")
+        }
+        #expect(try run("base64.decode", " \n").output?.primaryText == "")
+        // Whitespace inside the encoding still needs Ignore whitespace, and
+        // locations keep pointing into the original input.
+        #expect(try run("base64.decode", "\nSGVs bG8=\n") == .invalid(ToolDiagnostic(
+            "Base64 contains whitespace. Turn on Ignore whitespace to decode wrapped text.", at: .init(line: 2, column: 5))))
+        #expect(try run("base64.decode", "  SGVsbG8\n") == .invalid(ToolDiagnostic(
+            "Standard Base64 needs “=” padding. Add padding or use Decode Base64URL.", at: .init(line: 1, column: 10))))
+    }
+
     @Test func codecAPIAndRoundTrips() throws {
         // RFC 4648 vectors, independently specified for zero through six input bytes.
         let vectors = [("", ""), ("f", "Zg=="), ("fo", "Zm8="), ("foo", "Zm9v"),

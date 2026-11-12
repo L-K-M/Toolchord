@@ -42,7 +42,7 @@ Format, minify, and validate work lexically: validate the RFC 8259 grammar, then
 
 ### Base64
 
-Standard and URL-safe alphabets are separate commands, so the alphabet is always explicit. Encode UTF-8 text: Standard emits padding, Base64URL does not. Standard decoding requires correct padding; Base64URL accepts padded or unpadded input. Reject the other alphabet's characters (pointing to the right command), misplaced or excess padding, impossible lengths, and nonzero pad bits. Whitespace is rejected unless **Ignore whitespace** is on (space, tab, CR, LF only). Non-UTF-8 output is rejected with **Decoded bytes are not UTF-8 text**. [RFC 4648](https://www.rfc-editor.org/rfc/rfc4648.html)
+Standard and URL-safe alphabets are separate commands, so the alphabet is always explicit. Encode UTF-8 text: Standard emits padding, Base64URL does not. Standard decoding requires correct padding; Base64URL accepts padded or unpadded input. Reject the other alphabet's characters (pointing to the right command), misplaced or excess padding, impossible lengths, and nonzero pad bits. Whitespace around the encoding, such as a copied line break, is ignored; whitespace inside it is rejected unless **Ignore whitespace** is on (space, tab, CR, LF only). Non-UTF-8 output is rejected with **Decoded bytes are not UTF-8 text**. [RFC 4648](https://www.rfc-editor.org/rfc/rfc4648.html)
 
 ### URL
 

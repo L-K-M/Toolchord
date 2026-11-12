@@ -67,8 +67,12 @@ enum Base64Codec {
         func fail(_ message: String, _ offset: Int) throws -> Never {
             throw ProcessingError.invalid(Failure(message: message, offset: offset))
         }
+        // Whitespace around the encoding is never part of it: a token copied
+        // from a terminal or an editor usually ends with a line break. Only
+        // whitespace inside the encoding needs Ignore whitespace.
+        let content = contentBounds(of: text)
         var values: [UInt8] = []
-        values.reserveCapacity(text.utf8.count)
+        values.reserveCapacity(content.count)
         var offset = 0
         var lastDigitOffset = 0
         var firstPadding: Int?
@@ -80,6 +84,7 @@ enum Base64Codec {
                 nextCheck = offset + 4096
             }
             defer { offset += scalar.utf8.count }
+            guard content.contains(offset) else { continue }
             let n = scalar.value
             if n == 32 || n == 9 || n == 10 || n == 13 {
                 if ignoreWhitespace { continue }
@@ -121,10 +126,10 @@ enum Base64Codec {
         if remainder == 1 { try fail(lengthMessage, lastDigitOffset) }
         if padding > 0 {
             guard (remainder == 2 && padding == 2) || (remainder == 3 && padding == 1) else {
-                try fail(lengthMessage, firstPadding ?? offset)
+                try fail(lengthMessage, firstPadding ?? content.upperBound)
             }
         } else if alphabet == .standard && remainder != 0 {
-            try fail("Standard Base64 needs “=” padding. Add padding or use Decode Base64URL.", offset)
+            try fail("Standard Base64 needs “=” padding. Add padding or use Decode Base64URL.", content.upperBound)
         }
         if let last = values.last, (remainder == 2 && last & 15 != 0) || (remainder == 3 && last & 3 != 0) {
             try fail("The last character has nonzero padding bits, so this isn’t canonical Base64.", lastDigitOffset)
@@ -145,5 +150,23 @@ enum Base64Codec {
             }
         }
         return output
+    }
+
+    /// UTF-8 offsets of `text` without its leading and trailing whitespace.
+    /// Only the whitespace at either end is scanned.
+    private static func contentBounds(of text: String) -> Range<Int> {
+        let scalars = text.unicodeScalars
+        var start = scalars.startIndex
+        while start < scalars.endIndex, CharacterSet.whitespacesAndNewlines.contains(scalars[start]) {
+            scalars.formIndex(after: &start)
+        }
+        var end = scalars.endIndex
+        while end > start {
+            let previous = scalars.index(before: end)
+            guard CharacterSet.whitespacesAndNewlines.contains(scalars[previous]) else { break }
+            end = previous
+        }
+        let lower = text.utf8.distance(from: text.utf8.startIndex, to: start)
+        return lower..<(lower + text.utf8.distance(from: start, to: end))
     }
 }
