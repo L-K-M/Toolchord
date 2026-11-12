@@ -63,7 +63,14 @@ struct TimeParser {
         return magnitude == UInt64(Int64.max) + 1 ? Int64.min : -Int64(magnitude)
     }
 
-    func unix(isMilliseconds: Bool) throws -> Int64 {
+    enum UnixUnit: String {
+        case auto
+        case seconds = "s"
+        case milliseconds = "ms"
+    }
+
+    func unix(unit: UnixUnit) throws -> (milliseconds: Int64, unit: UnixUnit) {
+        let isMilliseconds = unit == .milliseconds
         let malformed = "Enter a Unix time such as 1700000000."
         guard !bytes.isEmpty else { throw fail(malformed) }
         let negative = bytes[0] == 45
@@ -104,10 +111,11 @@ struct TimeParser {
         let (magnitude, fractionOverflow) = scaled.addingReportingOverflow(isMilliseconds ? 0 : fraction)
         if !overflow && !scaleOverflow && !fractionOverflow {
             let value = negative ? -magnitude : magnitude
-            if TimeMath.range.contains(value) { return value }
+            if TimeMath.range.contains(value) { return (value, isMilliseconds ? .milliseconds : .seconds) }
         }
         var message = TimeMath.rangeMessage
         if !isMilliseconds, fractionCount == 0, !overflow, TimeMath.range.contains(negative ? -whole : whole) {
+            if unit == .auto { return (negative ? -whole : whole, .milliseconds) }
             message += TimeMath.millisecondHint
         }
         throw fail(message)

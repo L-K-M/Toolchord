@@ -2,6 +2,7 @@ import Foundation
 
 /// Exact Unix time and proleptic Gregorian RFC 3339 conversion.
 public enum TimeTools {
+    private static let fromUnixUnit: ToolOption = .choice("unit", "Unit", [.init("auto", "Auto"), .init("s", "Seconds"), .init("ms", "Milliseconds")], default: "auto")
     static let unit: ToolOption = .choice("unit", "Unit", [.init("s", "Seconds"), .init("ms", "Milliseconds")], default: "s")
 
     public static let commands: [ToolCommand] = [
@@ -9,7 +10,7 @@ public enum TimeTools {
             id: "time.fromUnix", title: "Convert Unix Time", summary: "Seconds or milliseconds to a date",
             group: .time, icon: .symbol("clock"),
             aliases: ["epoch", "unix timestamp", "timestamp to date", "epoch to date", "unix to date", "epoch converter"],
-            options: [unit], copyNoun: "UTC time", affinity: { $0.has(.unixTime) ? 95 : 0 },
+            options: [fromUnixUnit], copyNoun: "UTC time", affinity: { $0.has(.unixTime) ? 95 : 0 },
             evaluate: { evaluate($0, operation: .fromUnix) }
         ),
         ToolCommand(
@@ -42,6 +43,7 @@ public enum TimeTools {
         if request.cancellation.isCancelled { return .cancelled }
         do {
             let milliseconds: Int64
+            var readUnit: TimeParser.UnixUnit = .seconds
             switch operation {
             case .now:
                 guard let seed = request.seed,
@@ -52,7 +54,10 @@ public enum TimeTools {
                 guard TimeMath.range.contains(milliseconds) else { throw TimeFailure.invalid(ToolDiagnostic(TimeMath.rangeMessage)) }
             case .fromUnix:
                 let parser = try TimeParser(text: request.input.text ?? "", cancellation: request.cancellation)
-                milliseconds = try parser.unix(isMilliseconds: request.options.choice("unit", default: "s") == "ms")
+                let unit = TimeParser.UnixUnit(rawValue: request.options.choice("unit", default: "auto")) ?? .auto
+                let parsed = try parser.unix(unit: unit)
+                milliseconds = parsed.milliseconds
+                readUnit = parsed.unit
             case .toUnix:
                 let parser = try TimeParser(text: request.input.text ?? "", cancellation: request.cancellation)
                 milliseconds = try parser.rfc3339()
@@ -72,7 +77,7 @@ public enum TimeTools {
             switch operation {
             case .fromUnix:
                 primary = utc
-                status = request.options.choice("unit", default: "s") == "ms" ? "Read as milliseconds" : "Read as seconds"
+                status = readUnit == .milliseconds ? "Read as milliseconds" : "Read as seconds"
                 fields = [fields[2], fields[3], fields[0], fields[1]]
                 fields.append(ResultField(id: "relative", label: "Relative", value: TimeMath.relative(milliseconds, to: request.now), isCopyable: false, isMonospaced: false))
             case .toUnix:

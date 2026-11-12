@@ -56,7 +56,7 @@ Decode three-segment compact JWTs whose header and claims are JSON objects; a le
 
 All calendar math uses exact integers on the proleptic Gregorian calendar for years 0001–9999 (no `DateFormatter`, which switches to the Julian calendar before 1582).
 
-- **Convert Unix Time:** a visible Seconds/Milliseconds unit, defaulting to Seconds and never inferred from digit count. Seconds accept up to three fraction digits; milliseconds must be whole. Out-of-range values that would fit as milliseconds suggest switching the unit. Primary copy is `YYYY-MM-DDTHH:mm:ss.SSSZ`; fields add local time with its offset and zone, Unix seconds and milliseconds, and a relative description.
+- **Convert Unix Time:** a visible Auto/Seconds/Milliseconds unit, defaulting to Auto. Auto reads seconds first, falling back to milliseconds only for whole numbers outside the seconds range that fit as milliseconds. Seconds accept up to three fraction digits; milliseconds must be whole. In Seconds mode, out-of-range values that fit as milliseconds suggest switching the unit. Primary copy is `YYYY-MM-DDTHH:mm:ss.SSSZ`; fields add local time with its offset and zone, Unix seconds and milliseconds, and a relative description.
 - **Convert Date to Unix Time:** an RFC 3339 subset requiring a time and a `Z` or numeric offset; leap seconds, offsetless and localized dates, and precision beyond milliseconds are rejected with an explanation. Primary copy is an exact decimal in the selected unit.
 - **Show Current Time:** captures the instant once (Refresh with ⌘R) and copies Unix seconds, milliseconds, or UTC text. [RFC 3339](https://www.rfc-editor.org/rfc/rfc3339.html)
 
@@ -111,7 +111,7 @@ Literal strings use JSON escape notation where necessary. Structured copy target
 | Schemes without authority | Inspect `mailto:foo=bar@example.com?subject=Hello` / `data:text/plain;base64,SGVsbG8=` | One pair `subject=Hello` with Scheme and Path fields / no parameters |
 | Malformed URL text | Decode `%G0`, `%`, `%FF` | Invalid, invalid, not UTF-8; never a partial copy |
 | JWT | `eyJhbGciOiJub25lIn0.eyJleHAiOjAsInN1YiI6IngifQ.` at a clock after the epoch | Claims `{"exp":0,"sub":"x"}`, expiry in the past, signature unverified |
-| Unix units | `0` s; `-1` s; `1700000000` s; `1700000000000` ms | `1970-01-01T00:00:00.000Z`; `1969-12-31T23:59:59.000Z`; both `2023-11-14T22:13:20.000Z` |
+| Unix units | Auto (default): `0`; `-1`; `1700000000`; `1700000000000`; `253402300800` | Auto tries seconds, then whole milliseconds if only those fit: `1970-01-01T00:00:00.000Z`; `1969-12-31T23:59:59.000Z`; both `2023-11-14T22:13:20.000Z`; `1978-01-11T21:31:40.800Z` |
 | Offset conversion | `2024-01-01T01:00:00+01:00` → seconds | `1704067200` |
 | Identifiers | UUID v7 for 0x017F22E279B0 ms with RFC 9562 A.6 random bits; ULID for 1469918176385 ms with all-one random bits | `017f22e2-79b0-7cc3-98c4-dc0c0c07398f`; `01ARYZ6S41ZZZZZZZZZZZZZZZZ` |
 | Generated values | Generate, switch tools, return, regenerate | Same value until Regenerate; v4 version nibble `4`, variant in `89ab` |
