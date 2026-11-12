@@ -5,3 +5,11 @@
 *.xcodeproj/
 xcuserdata/
 .swiftpm/
+
+# Build artifacts (scripts/build.sh --zip/--dmg, releases)
+/dist/
+
+# IDE / local tooling
+.idea/
+.vscode/
+**/.claude/settings.local.json

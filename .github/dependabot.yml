@@ -1,0 +1,10 @@
+version: 2
+updates:
+  # SwiftPM and the app itself have no dependabot ecosystem; when package
+  # manifests appear (Package.resolved is already tracked), add the matching
+  # entries here.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5

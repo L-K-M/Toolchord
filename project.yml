@@ -1,7 +1,7 @@
 # Generates Toolchord.xcodeproj: run `xcodegen generate` (or `make project`).
 name: Toolchord
 options:
-  bundleIdPrefix: com.toolchord
+  bundleIdPrefix: ch.lkmc
   deploymentTarget:
     macOS: "14.0"
   createIntermediateGroups: true
@@ -26,7 +26,7 @@ targets:
     settings:
       base:
         PRODUCT_NAME: Toolchord
-        PRODUCT_BUNDLE_IDENTIFIER: com.toolchord.Toolchord
+        PRODUCT_BUNDLE_IDENTIFIER: ch.lkmc.Toolchord
         MARKETING_VERSION: "1.0"
         CURRENT_PROJECT_VERSION: "1"
         GENERATE_INFOPLIST_FILE: YES
