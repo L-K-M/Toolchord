@@ -42,8 +42,11 @@ implementation contracts and research docs. Keep them in step with the code.
 | Cut a release | `scripts/release.sh X.Y.Z [--push]` — tag runs `.github/workflows/release.yml` |
 
 `scripts/build.sh` / `scripts/release.sh` are thin stubs over the shared
-`lkm-build`/`lkm-release` engine (the `release-tool` repo, `brew`-installed as
-`lkm-build`/`lkm-release`). The release workflow publishes the unsigned
+`lkm-build`/`lkm-release` engine (the `release-tool` repo; clone it and run
+`./install.sh`). The build stub requires an engine whose `--capabilities`
+includes `BUILD_ADHOC_ENTITLEMENTS` to retain App Sandbox restrictions.
+The release stub generates the project and bumps `project.yml` alongside
+README. The release workflow publishes the unsigned
 `Toolchord-v<X.Y.Z>-macos-universal.{zip,dmg}` assets.
 
 ## Conventions

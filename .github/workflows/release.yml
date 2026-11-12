@@ -31,7 +31,7 @@ jobs:
       - name: Select Xcode
         uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
         with:
-          xcode-version: '26.0'
+          xcode-version: '26.6'
 
       - name: Install tooling
         run: brew install xcbeautify create-dmg xcodegen
@@ -62,13 +62,17 @@ jobs:
         run: |
           APP=$(find "$RUNNER_TEMP/DerivedData/Build/Products/Release" -maxdepth 1 -name "$APP_NAME.app" -print -quit)
           [ -n "$APP" ] || { echo "::error::built $APP_NAME.app not found under Release products"; exit 1; }
-          codesign --force --deep --sign - "$APP"
+          codesign --force --deep --sign - --entitlements App/Toolchord.entitlements "$APP"
+          codesign --verify --deep --strict "$APP"
+          codesign -d --entitlements - --xml "$APP" > "$RUNNER_TEMP/signed-entitlements.plist"
+          /usr/libexec/PlistBuddy -c 'Print :com.apple.security.app-sandbox' \
+            "$RUNNER_TEMP/signed-entitlements.plist" | grep -qx true
           echo "APP_PATH=$APP" >> "$GITHUB_ENV"
 
       - name: Package zip + DMG
         run: |
-          ZIP="$RUNNER_TEMP/$APP_NAME-$VERSION-macos-universal.zip"
-          DMG="$RUNNER_TEMP/$APP_NAME-$VERSION-macos-universal.dmg"
+          ZIP="$RUNNER_TEMP/$APP_NAME-v$VERSION-macos-universal.zip"
+          DMG="$RUNNER_TEMP/$APP_NAME-v$VERSION-macos-universal.dmg"
           ditto -c -k --keepParent "$APP_PATH" "$ZIP"
           create-dmg \
             --volname "$APP_NAME" \

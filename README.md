@@ -43,6 +43,19 @@ This generates `Toolchord.xcodeproj` from `project.yml`, builds a release app in
 
 To work in Xcode, run `make project` and open `Toolchord.xcodeproj`.
 
+For the shared build and release entry points, install the current
+[lkm-build and lkm-release engines](https://github.com/L-K-M/release-tool)
+by running `./install.sh` in that repository, then use:
+
+```bash
+scripts/build.sh --install
+scripts/release.sh 1.0.1          # bump project.yml + README and create a local tag
+scripts/release.sh 1.0.2 --push   # also push the commit and tag to publish zip + DMG
+```
+
+The build script requires App Sandbox support from the engine. The release
+script generates the Xcode project first; nothing is published without `--push`.
+
 ## Use
 
 | Key | Action |

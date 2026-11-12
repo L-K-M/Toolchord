@@ -13,10 +13,12 @@
 # Usage: scripts/release.sh [X.Y[.Z]] [--push]
 # Shared engine: https://github.com/L-K-M/release-tool (this stub only sets config).
 set -euo pipefail
+cd "$(dirname "$0")/.."
 
 export RELEASE_APP_NAME="Toolchord"
 export RELEASE_KIND="xcode"
 export RELEASE_XCODE_PROJECT="Toolchord.xcodeproj"
+export RELEASE_XCODEGEN_YML="project.yml"
 export RELEASE_XCODE_SCHEME="Toolchord"
 export RELEASE_CI_NOTE="CI (release.yml) will now build, package (.zip + .dmg), and publish the GitHub Release for the tag."
 export RELEASE_INVOKED_AS="scripts/release.sh"
@@ -26,4 +28,5 @@ command -v "$BIN" >/dev/null 2>&1 || {
   echo "error: lkm-release not found — clone https://github.com/L-K-M/release-tool and run ./install.sh" >&2
   exit 1
 }
+xcodegen generate
 exec "$BIN" "$@"

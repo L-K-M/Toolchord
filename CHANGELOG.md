@@ -17,4 +17,6 @@ All notable changes to this project are documented here. The format follows
   shared `lkm-build`/`lkm-release` engines, a CI workflow (`swift test` +
   Release app build + shellcheck), a tag-triggered release workflow that
   packages and publishes the unsigned zip and DMG, dependabot, and the GLM
-  review workflow.
+  review workflow. Build/install and release signing retain App Sandbox
+  restrictions; the release stub generates the project and keeps the
+  committed XcodeGen version source in sync with release tags.

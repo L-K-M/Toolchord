@@ -19,6 +19,7 @@ export BUILD_APP_NAME="Toolchord"
 export BUILD_KIND="xcode"
 export BUILD_XCODE_PROJECT="Toolchord.xcodeproj"
 export BUILD_XCODE_SCHEME="Toolchord"
+export BUILD_ADHOC_ENTITLEMENTS="App/Toolchord.entitlements"
 export BUILD_DERIVED_DATA="build/DerivedData"
 export BUILD_INVOKED_AS="scripts/build.sh"
 BIN="${LKM_BUILD_BIN:-lkm-build}"
@@ -26,4 +27,8 @@ command -v "$BIN" >/dev/null 2>&1 || {
   echo "error: lkm-build not found — clone https://github.com/L-K-M/release-tool and run ./install.sh" >&2
   exit 1
 }
+if ! "$BIN" --capabilities 2>/dev/null | grep -qx 'BUILD_ADHOC_ENTITLEMENTS'; then
+  echo "error: update lkm-build from https://github.com/L-K-M/release-tool and run ./install.sh (App Sandbox support required)" >&2
+  exit 1
+fi
 exec "$BIN" "$@"

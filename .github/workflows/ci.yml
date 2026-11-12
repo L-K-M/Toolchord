@@ -33,7 +33,11 @@ jobs:
         with:
           persist-credentials: false
       - name: shellcheck
-        run: shellcheck scripts/*.sh
+        run: shellcheck scripts/*.sh scripts/tests/*.sh
+      - name: Build and release stub regression tests
+        run: |
+          bash scripts/tests/build.sh
+          bash scripts/tests/release.sh
 
   build-test:
     name: Build & Test
@@ -49,7 +53,7 @@ jobs:
       - name: Select Xcode
         uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
         with:
-          xcode-version: '26.0'   # pin so a runner-image bump can't change the toolchain
+          xcode-version: '26.6'   # pin the stable toolchain shipped on macos-26
 
       - name: Install tooling
         run: brew install xcbeautify xcodegen
@@ -73,6 +77,15 @@ jobs:
             -destination 'generic/platform=macOS' \
             CODE_SIGNING_ALLOWED=NO \
             build | xcbeautify
+
+      - name: Sign and verify App Sandbox restrictions
+        run: |
+          APP="$RUNNER_TEMP/DerivedData/Build/Products/Release/Toolchord.app"
+          codesign --force --deep --sign - --entitlements App/Toolchord.entitlements "$APP"
+          codesign --verify --deep --strict "$APP"
+          codesign -d --entitlements - --xml "$APP" > "$RUNNER_TEMP/signed-entitlements.plist"
+          /usr/libexec/PlistBuddy -c 'Print :com.apple.security.app-sandbox' \
+            "$RUNNER_TEMP/signed-entitlements.plist" | grep -qx true
 
       # Third-Party-Notices.txt becomes mandatory in the built app as soon as the
       # repo commits one; until the app bundles third-party content there is
