@@ -78,7 +78,9 @@ public enum RandomTools {
         return .success(ToolOutput(
             primaryText: text,
             status: "\(length) characters",
-            fields: [ResultField(id: "entropy", label: "Entropy", value: "\(entropy) bits", isCopyable: false, isMonospaced: false)]
+            fields: [ResultField(id: "entropy", label: "Entropy", value: "\(entropy) bits", isCopyable: false, isMonospaced: false)],
+            // Used as passwords, tokens, and API keys (see the aliases).
+            sensitivity: .secret
         ))
     }
 

@@ -26,6 +26,14 @@ public struct KeyboardShortcut: Codable, Hashable, Sendable {
 
     public static let defaultShortcut = optionShiftSpace
 
+    /// Whether a key press could have produced this shortcut: a 16-bit key
+    /// code and no modifiers but ⌃⌥⇧⌘. Stored preferences can hold anything.
+    var isRecordable: Bool {
+        UInt16(exactly: keyCode) != nil && carbonModifiers & ~Self.recordableModifiers == 0
+    }
+
+    private static let recordableModifiers = UInt32(controlKey | optionKey | shiftKey | cmdKey)
+
     public var modifierFlags: NSEvent.ModifierFlags {
         var flags: NSEvent.ModifierFlags = []
         if carbonModifiers & UInt32(controlKey) != 0 { flags.insert(.control) }
@@ -111,6 +119,36 @@ public struct KeyboardShortcut: Codable, Hashable, Sendable {
         if flags == [.command], character?.lowercased() == "q" {
             return .reserved("⌘Q quits apps.")
         }
+        // The palette handles these itself. A global hotkey with the same
+        // combination would shadow the panel's key handling, so the recorder
+        // must not offer it.
+        if flags == [.command] {
+            switch character?.lowercased() {
+            case "c": return .reserved("⌘C copies the selection in Toolchord.")
+            case "x": return .reserved("⌘X cuts the selection in Toolchord.")
+            case "v": return .reserved("⌘V pastes or attaches input in Toolchord.")
+            case "a": return .reserved("⌘A selects all in Toolchord.")
+            case "z": return .reserved("⌘Z undoes in Toolchord.")
+            case "k": return .reserved("⌘K opens the Toolchord actions menu.")
+            case "r": return .reserved("⌘R regenerates a value in Toolchord.")
+            case "w": return .reserved("⌘W closes the Toolchord panel.")
+            case "f": return .reserved("⌘F finds text in Toolchord.")
+            case ",": return .reserved("⌘, opens Toolchord settings.")
+            default: break
+            }
+        }
+        if flags == [.command, .shift], character?.lowercased() == "z" {
+            return .reserved("⇧⌘Z redoes in Toolchord.")
+        }
+        switch (keyCode, flags) {
+        case (UInt32(kVK_Return), [.command]), (UInt32(kVK_ANSI_KeypadEnter), [.command]):
+            return .reserved("⌘↵ copies and closes the Toolchord panel.")
+        case (UInt32(kVK_Return), [.command, .shift]), (UInt32(kVK_ANSI_KeypadEnter), [.command, .shift]):
+            return .reserved("⇧⌘↵ copies without closing the Toolchord panel.")
+        case (UInt32(kVK_Delete), [.command, .shift]):
+            return .reserved("⇧⌘⌫ clears the Toolchord input.")
+        default: break
+        }
         let space = UInt32(kVK_Space)
         let reason: String
         switch (keyCode, flags) {
@@ -189,7 +227,10 @@ enum KeyNames {
 
     /// The character `keyCode` produces in the keyboard layout `source`.
     static func character(for keyCode: UInt32, commandState: Bool, in source: TISInputSource) -> String? {
-        guard let pointer = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData) else { return nil }
+        // Virtual key codes are 16 bits; a wider one, as in corrupt
+        // preferences, names no key.
+        guard let virtualKeyCode = UInt16(exactly: keyCode),
+              let pointer = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData) else { return nil }
         let layoutData = Unmanaged<CFData>.fromOpaque(pointer).takeUnretainedValue() as Data
         var deadKeyState: UInt32 = 0
         var length = 0
@@ -198,7 +239,7 @@ enum KeyNames {
             guard let layout = buffer.baseAddress?.assumingMemoryBound(to: UCKeyboardLayout.self) else { return -1 }
             return UCKeyTranslate(
                 layout,
-                UInt16(keyCode),
+                virtualKeyCode,
                 UInt16(kUCKeyActionDisplay),
                 commandState ? UInt32((cmdKey >> 8) & 0xFF) : 0,
                 UInt32(LMGetKbdType()),

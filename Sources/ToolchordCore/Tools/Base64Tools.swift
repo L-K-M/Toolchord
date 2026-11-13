@@ -31,6 +31,7 @@ public enum Base64Tools {
             if decoding {
                 let bytes = try Base64Codec.decode(text, alphabet: alphabet,
                     ignoreWhitespace: request.options.flag("ignoreWhitespace"),
+                    surroundingWhitespace: .ignore,
                     maxOutputBytes: request.limits.maxOutputBytes, cancellation: request.cancellation)
                 guard let decoded = String(bytes: bytes, encoding: .utf8) else {
                     return .invalid(ToolDiagnostic("Decoded bytes are not UTF-8 text."))
