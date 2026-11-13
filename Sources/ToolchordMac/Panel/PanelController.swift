@@ -223,6 +223,10 @@ public final class PanelController: NSObject, PaletteActions, PaletteCommandHand
     /// The ⌘V button: send a real paste command to the search field so the
     /// read goes through the same path as typing ⌘V.
     func pasteFromClipboard() {
+        if session.isInTool, session.selectedCommand?.isGenerator == true {
+            session.rejectPaste(reason: "Generators create a new value and don’t use input.")
+            return
+        }
         if session.isInTool {
             focus.focusEditor()
         } else {
@@ -354,7 +358,7 @@ public final class PanelController: NSObject, PaletteActions, PaletteCommandHand
 
         menu.addItem(.separator())
         menu.addItem(item("Settings…", key: ",", modifiers: [.command], enabled: true) { [weak self] in self?.openSettings() })
-        menu.addItem(item("Close Toolchord", key: "w", modifiers: [.command], enabled: true) { [weak self] in self?.dismiss(.completed) })
+        menu.addItem(item("Close Panel", key: "w", modifiers: [.command], enabled: true) { [weak self] in self?.dismiss(.completed) })
         return menu
     }
 

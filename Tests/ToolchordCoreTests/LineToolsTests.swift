@@ -91,6 +91,25 @@ import Testing
         #expect(output.primaryText == "")
     }
 
+    @Test(arguments: ["\n", "\r", "\r\n"])
+    func dedupePreservesDistinctUnicodeBytes(lineBreak: String) throws {
+        let composed = "é"
+        let decomposed = "e\u{301}"
+        let input = [composed, decomposed, composed, decomposed].joined(separator: lineBreak) + lineBreak
+        let output = try run("lines.dedupe", input)
+        let expected = [composed, decomposed].joined(separator: lineBreak) + lineBreak
+        #expect(output.primaryText.utf8.elementsEqual(expected.utf8))
+        #expect(output.status == "Removed 2 duplicates")
+    }
+
+    @Test func dedupeAppliesOnlyRequestedNormalizations() throws {
+        let input = " É \n E\u{301} \né\ne\u{301}"
+        let expected = " É \n E\u{301} "
+        let output = try run("lines.dedupe", input, options: ["caseSensitive": "false", "trim": "true"])
+        #expect(output.primaryText.utf8.elementsEqual(expected.utf8))
+        #expect(output.status == "Removed 2 duplicates")
+    }
+
     // ─── Reverse ─────────────────────────────────────────────────────────────
 
     @Test func reverseBasic() throws {

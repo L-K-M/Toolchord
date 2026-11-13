@@ -283,6 +283,11 @@ public enum NumberTools {
             return .empty
         }
 
+        if !lastWasDigit {
+            let loc = TextLocator.location(ofScalarOffset: leading + scalarIdx - 1, in: text)
+            return .badDigit("_", readBase, loc)
+        }
+
         if digits.count > maxDigits {
             return .tooManyDigits
         }

@@ -270,7 +270,7 @@ public enum InputDetector {
     private enum Base64Alphabet { case standard, url }
 
     private static func base64Kind(_ scalars: [Unicode.Scalar]) -> Base64Alphabet? {
-        guard scalars.count >= 8 else { return nil }
+        guard scalars.count >= 8, !isIdentifier(scalars) else { return nil }
         var hasStandardOnly = false
         var hasURLOnly = false
         var hasDigit = false
@@ -302,6 +302,58 @@ public enum InputDetector {
         if hasURLOnly { return .url }
         if padding > 0 || hasStandardOnly { return scalars.count % 4 == 0 ? .standard : nil }
         return scalars.count % 4 == 0 ? .standard : .url
+    }
+
+    // Identifier spelling shares the Base64 alphabets; keep case-conversion
+    // suggestions available when word structure is stronger evidence.
+    private static func isIdentifier(_ scalars: [Unicode.Scalar]) -> Bool {
+        var hasUpper = false
+        var hasLower = false
+        for scalar in scalars {
+            switch scalar {
+            case "A"..."Z": hasUpper = true
+            case "a"..."z": hasLower = true
+            case "0"..."9", "-", "_": break
+            default: return false
+            }
+        }
+        if !hasUpper || !hasLower { return true }
+
+        var partStart = 0
+        var partCount = 0
+        var characterCount = 0
+        for index in scalars.indices {
+            let scalar = scalars[index]
+            let isSeparator = scalar == "-" || scalar == "_"
+            let isBoundary = index > partStart && isIdentifierBoundary(scalars, at: index)
+            if !isSeparator && !isBoundary { continue }
+            if index > partStart {
+                guard isIdentifierPart(scalars[partStart..<index]) else { return false }
+                partCount += 1
+                characterCount += index - partStart
+            }
+            partStart = isSeparator ? index + 1 : index
+        }
+        if partStart < scalars.count {
+            guard isIdentifierPart(scalars[partStart...]) else { return false }
+            partCount += 1
+            characterCount += scalars.count - partStart
+        }
+        return partCount > 0 && characterCount >= 3 * partCount
+    }
+
+    private static func isIdentifierBoundary(_ scalars: [Unicode.Scalar], at index: Int) -> Bool {
+        guard ("A"..."Z").contains(scalars[index]) else { return false }
+        let previous = scalars[index - 1]
+        if ("a"..."z").contains(previous) || ("0"..."9").contains(previous) { return true }
+        return ("A"..."Z").contains(previous)
+            && index + 1 < scalars.count && ("a"..."z").contains(scalars[index + 1])
+    }
+
+    private static func isIdentifierPart(_ part: ArraySlice<Unicode.Scalar>) -> Bool {
+        let afterUpper = part.drop { ("A"..."Z").contains($0) }
+        let afterLower = afterUpper.drop { ("a"..."z").contains($0) }
+        return !part.isEmpty && afterLower.allSatisfy { ("0"..."9").contains($0) }
     }
 
     /// A short single line of words or an identifier, such as `user name`,

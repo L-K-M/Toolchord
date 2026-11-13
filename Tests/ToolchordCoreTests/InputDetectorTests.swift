@@ -134,6 +134,33 @@ import Testing
         #expect(!kinds("abcd").contains(.base64))
     }
 
+    @Test(arguments: [
+        "first_name", "max-width", "Content-Type", "X-Request-ID",
+        "API_KEY_NAME", "x-request-id", "snake_case_identifier_here",
+        "OAuth2Token", "iPhone15Pro", "version2Beta", "userId42",
+        "SHA256Hash", "utf8String",
+    ])
+    func identifiersSuggestCaseConversion(text: String) throws {
+        let profile = InputDetector.profile(for: text)
+        #expect(profile.primaryKind == .words)
+        #expect(!profile.has(.base64))
+        #expect(!profile.has(.base64URL))
+        let command = try #require(CaseTools.commands.first { $0.id == "case.camel" })
+        #expect(command.affinity(profile) >= 30)
+    }
+
+    @Test(arguments: [
+        ("Xk3_9aBq-LmZ2pQr7tUv0w", InputKind.base64URL),
+        ("dGhpcyBpcyBhIHRlc3Q", .base64URL),
+        ("eyJzdWIiOiIxMjM0NTY3ODkwIn0", .base64URL),
+        ("SGVsbG8gV29ybGQh", .base64),
+        ("Pd4tJD1k6aLPzqlRnwvBWH2eT30l1dO6", .base64),
+        ("aGVsbG8=", .base64),
+    ] as [(String, InputKind)])
+    func encodedTokensKeepTheirKinds(text: String, kind: InputKind) {
+        #expect(InputDetector.profile(for: text).primaryKind == kind)
+    }
+
     @Test func shortNumbersAreNotTimestamps() {
         #expect(kinds("255").contains(.number))
         #expect(!kinds("255").contains(.unixTime))

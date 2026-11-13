@@ -26,7 +26,7 @@ Paste something and Toolchord suggests the tools that fit it. Every result shows
 
 ## Privacy
 
-Toolchord processes everything on your Mac. It runs in the App Sandbox **without network access**, so the app itself can't send your input anywhere. It reads the clipboard only when you paste, keeps your input in memory only while the palette is open, and never stores or logs it. Results you copy go to the standard system clipboard, which macOS may share with your other devices through [Universal Clipboard](https://support.apple.com/en-us/102430).
+Toolchord processes everything on your Mac. It runs in the App Sandbox **without network access**, so the app itself can't send your input anywhere. It reads the clipboard only when you paste, keeps your input in memory only while the palette is open, and never stores or logs it. Results you copy go to the standard system clipboard, which macOS may share with your other devices through [Universal Clipboard](https://support.apple.com/en-us/102430). Generated random strings are the exception: they stay on this Mac and are marked as confidential, which asks clipboard history apps that follow the [nspasteboard.org](http://nspasteboard.org) convention not to keep or show them.
 
 ## Requirements
 
@@ -76,7 +76,7 @@ Settings (from the menu bar icon or ⌘, in the palette) cover the shortcut, ope
 make test
 ```
 
-458 tests cover every tool fixture, a robustness sweep that runs each command against awkward input, the session's stale-result and copy rules, and the Mac layer's logic.
+More than 400 tests cover every tool fixture, a robustness sweep that runs each command against awkward input, the session's stale-result and copy rules, and the Mac layer's logic.
 
 ```bash
 make snapshots

@@ -313,7 +313,7 @@ import Testing
             ("<script>one</scriptx>two</ScRiPt><p>shown</p>", "shown"),
             ("<style>not closed", ""),
             ("<template><template>x</template>y</template>z", "z"),
-            ("<svg />a<canvas/>b<object>hidden", "ab"),
+            ("<svg />a<canvas/>b<object>hidden", "a"),
             ("<blockquote/>x</blockquote>y", "> x\n\ny"),
             ("&lt;b&gt; &#0; &#xD800; &#1114112; &AMP; &bogus; &amp", "<b> � � � &AMP; &bogus; &amp"),
             ("a&nbsp;&nbsp; b&nbsp;", "a   b"),
@@ -322,6 +322,34 @@ import Testing
         for (input, expected) in examples {
             let actual = try run("html.plaintext", input).output?.primaryText
             #expect(actual == expected, Comment(rawValue: input))
+        }
+    }
+
+    @Test(arguments: ["html.plaintext", "markdown.plaintext"])
+    func trailingSlashDoesNotCloseHiddenHTML(command: String) throws {
+        let examples = [
+            "<div hidden/>secret</div><p>visible</p>",
+            "<div style='display: none'/>secret</div><p>visible</p>",
+            "<template/>secret</template><p>visible</p>",
+            "<div hidden><div/>inner</div>secret</div><p>visible</p>",
+            "<div hidden><svg/><div/>inner</div>secret</div><p>visible</p>",
+        ]
+        for input in examples {
+            #expect(try run(command, input).output?.primaryText == "visible", Comment(rawValue: input))
+        }
+    }
+
+    @Test func selfClosingForeignAndVoidElementsKeepFollowingText() throws {
+        let examples = [
+            "<svg/><p>visible</p>",
+            "<math/><p>visible</p>",
+            "<img hidden/><p>visible</p>",
+            "<svg><svg/>secret</svg><p>visible</p>",
+            "<svg><g/><text>secret</text></svg><p>visible</p>",
+            "<div hidden><svg><g/></svg>secret</div><p>visible</p>",
+        ]
+        for input in examples {
+            #expect(try run("html.plaintext", input).output?.primaryText == "visible", Comment(rawValue: input))
         }
     }
 

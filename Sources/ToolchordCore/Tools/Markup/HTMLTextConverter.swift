@@ -41,6 +41,7 @@ enum HTMLTextConverter {
 
     /// Elements that never have content or an end tag.
     static let void: Set<String> = ["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"]
+    static let foreignRoots: Set<String> = ["svg", "math"]
 
     /// An element the page doesn't render: the `hidden` attribute, or an
     /// inline `display: none` (common for preheader text in email HTML).
@@ -63,11 +64,12 @@ enum HTMLTextConverter {
 
     /// Whether a start tag opens content that isn't shown: raw text such as
     /// `script`, a hidden container such as `template`, or an element hidden
-    /// by attribute. Void and self-closing elements open nothing.
+    /// by attribute. Only foreign elements honor a self-closing slash;
+    /// ordinary HTML containers stay open until their explicit or implied end.
     static func opensHiddenContent(_ tag: Tag) -> Bool {
         guard !tag.end else { return false }
         if raw.contains(tag.name) || tag.name == "textarea" && isHiddenByAttribute(tag) { return true }
-        guard !void.contains(tag.name), !tag.selfClosing else { return false }
+        guard !void.contains(tag.name), !(tag.selfClosing && foreignRoots.contains(tag.name)) else { return false }
         return hidden.contains(tag.name) || isHiddenByAttribute(tag)
     }
     static func space(_ b: UInt8) -> Bool { b == 32 || b == 9 || b == 10 || b == 13 || b == 12 }
@@ -280,7 +282,9 @@ enum HTMLTextConverter {
                 } else if !(impliedEnds && startTagEnds(h, start: t.name, inner: hiddenInner)) {
                     // Raw text (including a textarea's) can't close the container.
                     if raw.contains(t.name) || t.name == "textarea" { rawName = t.name; rawKeepsText = false }
-                    if !t.selfClosing && !void.contains(t.name) {
+                    let inForeignContent = foreignRoots.contains(h) || hiddenInner.contains(where: foreignRoots.contains)
+                    let selfClosingForeign = t.selfClosing && (inForeignContent || foreignRoots.contains(t.name))
+                    if !selfClosingForeign && !void.contains(t.name) {
                         if t.name == h { hiddenSameDepth += 1 }
                         if hiddenInner.count < maxHiddenInner { hiddenInner.append(t.name) } else { hiddenOverflow = true }
                     }
@@ -295,7 +299,7 @@ enum HTMLTextConverter {
             if !t.end, t.name == "textarea", isHiddenByAttribute(t) { rawName = t.name; rawKeepsText = false; continue }
             if !t.end, hidden.contains(t.name) || isHiddenByAttribute(t) {
                 // A hidden void element (`<img hidden>`) just disappears.
-                if !t.selfClosing && !void.contains(t.name) {
+                if opensHiddenContent(t) {
                     hiddenName = t.name
                     hiddenInner = []
                     hiddenOverflow = false

@@ -46,6 +46,43 @@ import Testing
         #expect(try run("case.slug", "hello world").primaryText == "hello-world")
     }
 
+    @Test(arguments: [
+        ("hello world", "Hello World"),
+        ("the_quick-brownFox", "The Quick Brown Fox"),
+        ("it's a test, really. NASA and iPhone rock", "It's A Test, Really. NASA And iPhone Rock"),
+        ("HELLO WORLD", "Hello World"),
+        ("don’t stop", "Don’t Stop"),
+        ("élan vital", "Élan Vital"),
+        ("hello\tworld  again", "Hello\tWorld  Again"),
+        ("a b\r\nc d", "A B\r\nC D"),
+        ("helloWorld", "Hello World"),
+        ("  \t!?🙂  ", "  \t!?🙂  "),
+        ("“123élan” 🙂 cafe\u{301} + macOS McDonald API", "“123Élan” 🙂 Cafe\u{301} + macOS McDonald API"),
+        ("hello_world prose", "Hello_World Prose")
+    ])
+    func titlePreservesProse(input: String, expected: String) throws {
+        #expect(try run("case.title", input).primaryText == expected)
+    }
+
+    @Test(arguments: [
+        ("hello world", "Hello world"),
+        ("Hello world. This is me, isn't it?", "Hello world. This is me, isn't it?"),
+        ("HELLO WORLD. HOW ARE YOU?", "Hello world. How are you?"),
+        ("the NASA launch was great! i agree.", "The NASA launch was great! I agree."),
+        ("check the iPhone settings", "Check the iPhone settings"),
+        ("the_quick-brownFox", "The quick brown fox"),
+        ("hello world foo", "Hello world foo"),
+        ("helloWorld", "Hello world"),
+        ("say \"hello.\" then go!)] next? ’” again", "Say \"hello.\" Then go!)] Next? ’” Again"),
+        ("wait.no change!still here? yes", "Wait.no change!still here? Yes"),
+        ("123élan 🙂 I AGREE, i don’t mind.\tNEXT", "123Élan 🙂 I AGREE, I don’t mind.\tNEXT"),
+        ("yes i'm sure, and i’ll go. ice is cold", "Yes I'm sure, and I’ll go. Ice is cold"),
+        ("  \t!?🙂  ", "  \t!?🙂  ")
+    ])
+    func sentencePreservesProse(input: String, expected: String) throws {
+        #expect(try run("case.sentence", input).primaryText == expected)
+    }
+
     // MARK: - CamelCase parsing fixtures
 
     @Test func snakeXMLHttpRequest() throws {

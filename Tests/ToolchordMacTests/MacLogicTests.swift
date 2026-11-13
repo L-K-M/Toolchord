@@ -14,14 +14,56 @@ import ToolchordCore
         #expect(shortcut.accessibilityLabel == "Option Shift Space")
     }
 
+    // The macOS shortcuts the recorder checks.
+    private static let spotlight = KeyboardShortcut(keyCode: UInt16(kVK_Space), modifierFlags: [.command])
+    private static let finderSearch = KeyboardShortcut(keyCode: UInt16(kVK_Space), modifierFlags: [.command, .option])
+    private static let previousInputSource = KeyboardShortcut(keyCode: UInt16(kVK_Space), modifierFlags: [.control])
+    private static let nextInputSource = KeyboardShortcut(keyCode: UInt16(kVK_Space), modifierFlags: [.control, .option])
+    private static let appSwitcher = KeyboardShortcut(keyCode: UInt16(kVK_Tab), modifierFlags: [.command])
+    private static let reverseAppSwitcher = KeyboardShortcut(keyCode: UInt16(kVK_Tab), modifierFlags: [.command, .shift])
+    private static let nextWindow = KeyboardShortcut(keyCode: UInt16(kVK_ANSI_Grave), modifierFlags: [.command])
+    private static let macOSShortcuts = [
+        spotlight, finderSearch, previousInputSource, nextInputSource, appSwitcher, reverseAppSwitcher, nextWindow,
+    ]
+
     @Test func reservedAndIncompleteShortcutsAreRejected() {
         let space = UInt16(kVK_Space)
-        #expect(KeyboardShortcut(keyCode: space, modifierFlags: [.command]).problem == .reserved("⌘Space opens Spotlight."))
-        #expect(KeyboardShortcut(keyCode: space, modifierFlags: [.command, .option]).problem != nil)
-        #expect(KeyboardShortcut(keyCode: space, modifierFlags: [.control]).problem != nil)
+        #expect(Self.spotlight.validationProblem(character: nil, systemShortcuts: .enabled([Self.spotlight])) == .reserved(
+            "⌘Space opens Spotlight. To use it here, turn it off in System Settings → Keyboard → Keyboard Shortcuts → Spotlight."
+        ))
         #expect(KeyboardShortcut(keyCode: space, modifierFlags: [.shift]).problem == .needsModifier)
         #expect(KeyboardShortcut(keyCode: UInt16(kVK_ANSI_A), modifierFlags: []).problem == .needsModifier)
         #expect(KeyboardShortcut(keyCode: UInt16(kVK_F5), modifierFlags: []).problem == nil)
+    }
+
+    @Test func paletteCommandShortcutsAreRejected() {
+        // Character reservations follow the keyboard layout, so pass the
+        // character the palette would see with ⌘ held.
+        let command = KeyboardShortcut(keyCode: UInt16(kVK_ANSI_A), modifierFlags: [.command])
+        let reserved: [(String, String)] = [
+            ("c", "⌘C copies the selection in Toolchord."),
+            ("x", "⌘X cuts the selection in Toolchord."),
+            ("v", "⌘V pastes or attaches input in Toolchord."),
+            ("a", "⌘A selects all in Toolchord."),
+            ("z", "⌘Z undoes in Toolchord."),
+            ("k", "⌘K opens the Toolchord actions menu."),
+            ("r", "⌘R regenerates a value in Toolchord."),
+            ("w", "⌘W closes the Toolchord panel."),
+            ("f", "⌘F finds text in Toolchord."),
+            (",", "⌘, opens Toolchord settings."),
+        ]
+        for (character, message) in reserved {
+            #expect(command.validationProblem(character: character, systemShortcuts: .unknown) == .reserved(message), Comment(rawValue: character))
+        }
+        let redo = KeyboardShortcut(keyCode: UInt16(kVK_ANSI_A), modifierFlags: [.command, .shift])
+        #expect(redo.validationProblem(character: "z", systemShortcuts: .unknown) == .reserved("⇧⌘Z redoes in Toolchord."))
+        #expect(KeyboardShortcut(keyCode: UInt16(kVK_Return), modifierFlags: [.command]).problem != nil)
+        #expect(KeyboardShortcut(keyCode: UInt16(kVK_ANSI_KeypadEnter), modifierFlags: [.command]).problem != nil)
+        #expect(KeyboardShortcut(keyCode: UInt16(kVK_Return), modifierFlags: [.command, .shift]).problem != nil)
+        #expect(KeyboardShortcut(keyCode: UInt16(kVK_Delete), modifierFlags: [.command, .shift]).problem != nil)
+        #expect(KeyboardShortcut.optionShiftSpace.problem == nil)
+        #expect(KeyboardShortcut.controlCommandSpace.problem == nil)
+        #expect(KeyboardShortcut.controlOptionCommandSpace.problem == nil)
     }
 
     @Test func controlCommandSpaceIsAllowedWithANote() {
@@ -31,18 +73,70 @@ import ToolchordCore
         #expect(shortcut.conflictNote?.contains("Emoji") == true)
     }
 
-    @Test func quitReservationFollowsTheKeyboardLayout() {
+    @Test func reservationsFollowTheKeyboardLayout() {
         let physicalA = KeyboardShortcut(keyCode: UInt16(kVK_ANSI_A), modifierFlags: [.command])
         let physicalQ = KeyboardShortcut(keyCode: UInt16(kVK_ANSI_Q), modifierFlags: [.command])
         // French AZERTY swaps these letters relative to the ANSI positions.
-        #expect(physicalA.validationProblem(character: "q") == .reserved("⌘Q quits apps."))
-        #expect(physicalQ.validationProblem(character: "a") == nil)
-        // US QWERTY and uppercase translations have the same reservation.
-        #expect(physicalQ.validationProblem(character: "Q") == .reserved("⌘Q quits apps."))
-        #expect(physicalA.validationProblem(character: "a") == nil)
+        #expect(physicalA.validationProblem(character: "q", systemShortcuts: .unknown) == .reserved("⌘Q quits apps."))
+        // The same physical key types "a" with ⌘ on AZERTY, which Toolchord
+        // uses for select all, so it is reserved for that reason.
+        #expect(physicalQ.validationProblem(character: "a", systemShortcuts: .unknown) == .reserved("⌘A selects all in Toolchord."))
+        // US QWERTY and uppercase translations have the same reservations.
+        #expect(physicalQ.validationProblem(character: "Q", systemShortcuts: .unknown) == .reserved("⌘Q quits apps."))
+        #expect(physicalA.validationProblem(character: "a", systemShortcuts: .unknown) == .reserved("⌘A selects all in Toolchord."))
         // Extra modifiers remain available for a custom global shortcut.
         let modifiedQ = KeyboardShortcut(keyCode: UInt16(kVK_ANSI_A), modifierFlags: [.command, .option])
-        #expect(modifiedQ.validationProblem(character: "q") == nil)
+        #expect(modifiedQ.validationProblem(character: "q", systemShortcuts: .unknown) == nil)
+    }
+
+    @Test func macOSShortcutsAreReservedOnlyWhileTurnedOn() {
+        for shortcut in Self.macOSShortcuts {
+            let name = shortcut.displayString
+            // On in System Settings, or macOS didn't say: reserved.
+            #expect(shortcut.validationProblem(character: nil, systemShortcuts: .enabled([shortcut])) != nil, "\(name)")
+            #expect(shortcut.validationProblem(character: nil, systemShortcuts: .unknown) != nil, "\(name)")
+            // Turned off: free to record.
+            #expect(shortcut.validationProblem(character: nil, systemShortcuts: .enabled([])) == nil, "\(name)")
+        }
+        // Another macOS shortcut being on doesn't reserve this one.
+        #expect(Self.nextInputSource.validationProblem(character: nil, systemShortcuts: .enabled([Self.spotlight])) == nil)
+        // ⌘Q isn't a macOS shortcut setting, so it stays reserved.
+        let commandQ = KeyboardShortcut(keyCode: UInt16(kVK_ANSI_Q), modifierFlags: [.command])
+        #expect(commandQ.validationProblem(character: "q", systemShortcuts: .enabled([])) == .reserved("⌘Q quits apps."))
+    }
+
+    @Test func reservedMessagesSayWhereToTurnTheShortcutOff() {
+        #expect(Self.nextInputSource.validationProblem(character: nil, systemShortcuts: .unknown) == .reserved(
+            "⌃⌥Space switches input sources. To use it here, turn it off in System Settings → Keyboard → Keyboard Shortcuts → Input Sources."
+        ))
+        // The app switcher can't be turned off.
+        #expect(Self.appSwitcher.validationProblem(character: nil, systemShortcuts: .unknown) == .reserved("⌘Tab switches apps."))
+        // The window switcher is named by its key's label (⌘< on ISO keyboards).
+        #expect(Self.nextWindow.validationProblem(character: nil, systemShortcuts: .unknown) == .reserved(
+            "\(Self.nextWindow.displayString) switches windows. To use it here, turn it off in System Settings → Keyboard → Keyboard Shortcuts → Keyboard."
+        ))
+    }
+
+    @Test func readsTurnedOnShortcutsFromHIToolboxEntries() {
+        func entry(_ keyCode: Int, _ modifiers: Int, enabled: Bool) -> [String: Any] {
+            [kHISymbolicHotKeyCode: keyCode, kHISymbolicHotKeyModifiers: modifiers, kHISymbolicHotKeyEnabled: enabled]
+        }
+        let system = SystemShortcuts(entries: [
+            entry(kVK_Space, controlKey | optionKey, enabled: false),
+            entry(kVK_Space, cmdKey, enabled: true),
+            // Listed twice, once on: on.
+            entry(kVK_ANSI_Grave, cmdKey, enabled: false),
+            entry(kVK_ANSI_Grave, cmdKey, enabled: true),
+            // fn (0x20000) combinations can't be recorded, so this doesn't reserve ⌃Space.
+            entry(kVK_Space, controlKey | 0x20000, enabled: true),
+            // Missing modifiers: skipped rather than read as Space alone.
+            [kHISymbolicHotKeyCode: kVK_Space, kHISymbolicHotKeyEnabled: true],
+        ])
+        #expect(!system.mayUse(Self.nextInputSource))
+        #expect(system.mayUse(Self.spotlight))
+        #expect(system.mayUse(Self.nextWindow))
+        #expect(!system.mayUse(Self.previousInputSource))
+        #expect(!system.mayUse(KeyboardShortcut(keyCode: UInt32(kVK_Space), carbonModifiers: 0)))
     }
 
     @Test func modifierOrderFollowsApple() {
@@ -94,6 +188,41 @@ import ToolchordCore
         #expect(preferences.recentCommandIDs.isEmpty)
         preferences.recordUse(of: "f")
         #expect(preferences.recentCommandIDs.isEmpty)
+    }
+
+    @Test func invalidStoredShortcutFallsBackToDefault() throws {
+        let suite = "ToolchordTests.\(UUID().uuidString)"
+        let defaults = makeDefaults(name: suite)
+        // ⌘↵ copies and closes the panel, so it is reserved on every Mac and
+        // keyboard layout, unlike the macOS shortcuts, which can be turned off.
+        let reserved = KeyboardShortcut(keyCode: UInt16(kVK_Return), modifierFlags: [.command])
+        defaults.set(try JSONEncoder().encode(reserved), forKey: "shortcut")
+        #expect(AppPreferences(defaults: defaults).shortcut == .defaultShortcut)
+        defaults.removePersistentDomain(forName: suite)
+
+        let validSuite = "ToolchordTests.\(UUID().uuidString)"
+        let validDefaults = makeDefaults(name: validSuite)
+        validDefaults.set(try JSONEncoder().encode(KeyboardShortcut.controlCommandSpace), forKey: "shortcut")
+        #expect(AppPreferences(defaults: validDefaults).shortcut == .controlCommandSpace)
+        validDefaults.removePersistentDomain(forName: validSuite)
+    }
+
+    @Test func corruptStoredShortcutFallsBackToDefault() throws {
+        // Values no key press produces: a key code wider than 16 bits, and a
+        // modifier bit other than ⌃⌥⇧⌘.
+        let corrupt = [
+            KeyboardShortcut(keyCode: 70_000, carbonModifiers: UInt32(cmdKey | optionKey)),
+            KeyboardShortcut(keyCode: UInt32(kVK_ANSI_K), carbonModifiers: UInt32(cmdKey | optionKey) | 0x1_0000),
+        ]
+        for stored in corrupt {
+            let suite = "ToolchordTests.\(UUID().uuidString)"
+            let defaults = makeDefaults(name: suite)
+            defaults.set(try JSONEncoder().encode(stored), forKey: "shortcut")
+            #expect(AppPreferences(defaults: defaults).shortcut == .defaultShortcut, "\(stored)")
+            defaults.removePersistentDomain(forName: suite)
+        }
+        // Naming a key code that wide doesn't trap.
+        #expect(KeyNames.name(for: 70_000) == "Key 70000")
     }
 
     @Test func indentationPreferenceAppliesToFormatters() throws {

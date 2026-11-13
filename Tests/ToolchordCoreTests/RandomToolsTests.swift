@@ -48,6 +48,16 @@ import Testing
         #expect(result.output?.fields.first?.value == "190 bits")
     }
 
+    /// Review G1: random strings are used as secrets, lorem ipsum is not.
+    @Test func randomStringsAreSecrets() throws {
+        for characters in ["alnum", "symbols", "hex"] {
+            let output = try string(seed: hexSeed(Array(repeating: 7, count: 512)), options: ["characters": characters])
+            #expect(output.sensitivity == .secret)
+        }
+        let lorem = try command("random.lorem").run(ToolRequest(input: .none, seed: "42"))
+        #expect(lorem.output?.sensitivity == .normal)
+    }
+
     /// Review P2: a value copied at one length must not reveal the value at another.
     @Test func optionChangesGiveIndependentValues() throws {
         let seed = try command("random.string").makeSeed!(SeedContext())

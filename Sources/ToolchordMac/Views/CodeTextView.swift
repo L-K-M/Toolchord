@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import ToolchordCore
+import ToolchordSession
 
 /// Remembers the AppKit views that the controller moves focus between.
 @MainActor
@@ -36,6 +37,29 @@ final class PaletteFocus {
 /// Escape goes back (after any IME composition), and Tab moves focus;
 /// Option-Tab inserts a tab character.
 final class CodeTextView: NSTextView {
+    /// How Copy writes the selection. A selection of a secret result, such as
+    /// a generated random string, is written like the palette's own Copy of
+    /// it: kept on this Mac and marked confidential for clipboard history
+    /// apps, not as the plain text NSTextView would write.
+    var copySensitivity: ClipboardSensitivity = .normal
+    /// Receives secret copies; nil means the system clipboard. Tests pass a
+    /// private one.
+    var secretClipboard: ClipboardWriting?
+
+    override func copy(_ sender: Any?) {
+        guard copySensitivity == .secret else {
+            super.copy(sender)
+            return
+        }
+        let selection = selectedRanges
+            .map { (string as NSString).substring(with: $0.rangeValue) }
+            .joined(separator: "\n")
+        guard !selection.isEmpty else { return }
+        if !(secretClipboard ?? SystemClipboard()).writeText(selection, sensitivity: .secret) {
+            NSSound.beep()
+        }
+    }
+
     override func cancelOperation(_ sender: Any?) {
         if hasMarkedText() {
             super.cancelOperation(sender)
@@ -184,6 +208,11 @@ struct InputEditor: NSViewRepresentable {
 struct ResultTextView: NSViewRepresentable {
     let text: String
     let syntax: SyntaxKind
+    /// What the result belongs to, such as the command ID. New text with the
+    /// same identity comes from an edit, so the reader keeps their place.
+    let identity: String
+    /// How Copy writes a selection of the result.
+    let sensitivity: ClipboardSensitivity
     let dimmed: Bool
     let accessibilityLabel: String
     var focus: PaletteFocus?
@@ -206,17 +235,31 @@ struct ResultTextView: NSViewRepresentable {
     }
 
     private func apply(to textView: CodeTextView, coordinator: Coordinator) {
-        if !(coordinator.text.map { $0.hasSameUTF8(as: text) } ?? false) || coordinator.syntax != syntax {
-            coordinator.text = text
-            coordinator.syntax = syntax
-            textView.textStorage?.setAttributedString(SyntaxHighlighter.attributedString(for: text, syntax: syntax))
-            textView.scroll(.zero)
-        }
+        coordinator.show(text, syntax: syntax, identity: identity, in: textView)
+        textView.copySensitivity = sensitivity
         textView.alphaValue = dimmed ? 0.45 : 1
     }
 
+    @MainActor
     final class Coordinator {
-        var text: String?
-        var syntax: SyntaxKind?
+        private var text: String?
+        private var syntax: SyntaxKind?
+        private var identity: String?
+
+        /// Shows `text` in `textView`. A result for a different identity starts
+        /// at the top, even when its text is the same; a changed result for the
+        /// same identity, such as after an edit to the input, keeps the scroll
+        /// position (AppKit clamps it when the new text is shorter).
+        func show(_ text: String, syntax: SyntaxKind, identity: String, in textView: NSTextView) {
+            let isNewResult = identity != self.identity
+            self.identity = identity
+            let isSameText = self.text.map { $0.hasSameUTF8(as: text) } ?? false
+            if !isSameText || syntax != self.syntax {
+                self.text = text
+                self.syntax = syntax
+                textView.textStorage?.setAttributedString(SyntaxHighlighter.attributedString(for: text, syntax: syntax))
+            }
+            if isNewResult { textView.scroll(.zero) }
+        }
     }
 }
