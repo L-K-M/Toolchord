@@ -10,6 +10,16 @@ enum Base64Codec {
     enum ProcessingError: Error {
         case invalid(Failure), cancelled, tooLarge
     }
+    /// Whitespace before and after the encoding. Whitespace inside it needs
+    /// `ignoreWhitespace` either way.
+    enum SurroundingWhitespace: Sendable {
+        /// Skipped, as the Base64 commands do: a token copied from a terminal
+        /// or an editor usually ends with a line break.
+        case ignore
+        /// Rejected like any other whitespace, as within a compact JWT, where
+        /// whitespace beside a dot belongs to no segment.
+        case reject
+    }
 
     static func encode<Bytes: Collection>(_ bytes: Bytes, alphabet: Alphabet) -> String where Bytes.Element == UInt8 {
         // Unbounded, noncancellable entry point for other tool modules.
@@ -51,9 +61,12 @@ enum Base64Codec {
         return String(decoding: output, as: UTF8.self)
     }
 
-    static func decode(_ text: String, alphabet: Alphabet, ignoreWhitespace: Bool = false) -> Result<[UInt8], Failure> {
+    static func decode(
+        _ text: String, alphabet: Alphabet, ignoreWhitespace: Bool = false, surroundingWhitespace: SurroundingWhitespace = .reject
+    ) -> Result<[UInt8], Failure> {
         do {
             return .success(try decode(text, alphabet: alphabet, ignoreWhitespace: ignoreWhitespace,
+                                       surroundingWhitespace: surroundingWhitespace,
                                        maxOutputBytes: Int.max, cancellation: .never))
         } catch ProcessingError.invalid(let failure) {
             return .failure(failure)
@@ -63,14 +76,17 @@ enum Base64Codec {
     }
 
     static func decode(_ text: String, alphabet: Alphabet, ignoreWhitespace: Bool,
+                       surroundingWhitespace: SurroundingWhitespace,
                        maxOutputBytes: Int, cancellation: CancellationCheck) throws -> [UInt8] {
         func fail(_ message: String, _ offset: Int) throws -> Never {
             throw ProcessingError.invalid(Failure(message: message, offset: offset))
         }
-        // Whitespace around the encoding is never part of it: a token copied
-        // from a terminal or an editor usually ends with a line break. Only
-        // whitespace inside the encoding needs Ignore whitespace.
-        let content = contentBounds(of: text)
+        // Offsets keep counting from the start of `text`, so diagnostics
+        // point into the original input even when its ends are skipped.
+        let content = switch surroundingWhitespace {
+        case .ignore: contentBounds(of: text)
+        case .reject: 0..<text.utf8.count
+        }
         var values: [UInt8] = []
         values.reserveCapacity(content.count)
         var offset = 0

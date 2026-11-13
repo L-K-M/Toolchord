@@ -100,7 +100,7 @@ public enum JWTTools {
         }
         let bytes: [UInt8]
         do {
-            bytes = try Base64Codec.decode(segment, alphabet: .url, ignoreWhitespace: false,
+            bytes = try Base64Codec.decode(segment, alphabet: .url, ignoreWhitespace: false, surroundingWhitespace: .reject,
                                            maxOutputBytes: request.limits.maxOutputBytes, cancellation: request.cancellation)
         } catch Base64Codec.ProcessingError.invalid(let failure) {
             // Codec offsets refer directly to a segment of the original input.
