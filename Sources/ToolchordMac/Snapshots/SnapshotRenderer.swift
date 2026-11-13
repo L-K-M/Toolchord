@@ -31,6 +31,10 @@ public enum SnapshotRenderer {
         Scenario(name: "search-jwt", appearance: .darkAqua, width: Theme.panelWidth) { session in
             session.attach("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c")
         },
+        Scenario(name: "search-jwt-warnings", appearance: .darkAqua, width: Theme.panelWidth) { session in
+            session.setQuery("jwt")
+            session.attach("Bearer eyJhbGciOiJub25lIn0.eyJleHAiOjAsIm5iZiI6NDEwMjQ0NDgwMH0.")
+        },
         Scenario(name: "search-url", appearance: .aqua, width: Theme.panelWidth) { session in
             session.attach("https://example.test/search?q=tool+chord&lang=en&lang=de&page=2#results")
         },
@@ -41,6 +45,37 @@ public enum SnapshotRenderer {
         Scenario(name: "search-timestamp", appearance: .aqua, width: Theme.panelWidth) { session in
             session.attach("1700000000")
         },
+        // Boundary coverage for option-heavy commands and narrow panels.
+
+        Scenario(name: "search-number-options", appearance: .darkAqua, width: Theme.panelWidth) { session in
+            session.attach("42")
+            session.select("number.hex")
+        },
+        Scenario(name: "tool-number-options", appearance: .darkAqua, width: Theme.panelWidth) { session in
+            session.attach("42")
+            session.select("number.hex")
+            session.openSelected()
+        },
+        Scenario(name: "tool-number-options-narrow", appearance: .darkAqua, width: 600) { session in
+            session.attach("42")
+            session.select("number.hex")
+            session.openSelected()
+        },
+        Scenario(name: "search-random-options", appearance: .darkAqua, width: Theme.panelWidth) { session in
+            session.setQuery("random")
+            session.select("random.string")
+        },
+        Scenario(name: "tool-random-options", appearance: .darkAqua, width: Theme.panelWidth) { session in
+            session.setQuery("random")
+            session.select("random.string")
+            session.openSelected()
+        },
+        Scenario(name: "tool-random-options-narrow", appearance: .darkAqua, width: 600) { session in
+            session.setQuery("random")
+            session.select("random.string")
+            session.openSelected()
+        },
+
         Scenario(name: "search-color", appearance: .darkAqua, width: Theme.panelWidth) { session in
             session.attach("#ff8800")
         },
@@ -64,6 +99,7 @@ public enum SnapshotRenderer {
         Scenario(name: "search-plaintext", appearance: .darkAqua, width: Theme.panelWidth) { session in
             session.attach("curl\u{00A0}\u{2014}silent \u{201C}https://example.test/api?q=1\u{201D}\u{200B}")
         },
+
     ]
 
     /// Writes one PNG per scenario into `directory` and returns their URLs.

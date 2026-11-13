@@ -299,6 +299,120 @@ public enum CaseTools {
         return string(from: result)
     }
 
+    private static func isLetter(_ scalar: Unicode.Scalar) -> Bool {
+        switch scalar.properties.generalCategory {
+        case .uppercaseLetter, .lowercaseLetter, .titlecaseLetter, .modifierLetter, .otherLetter:
+            return true
+        default:
+            return false
+        }
+    }
+
+    private static func isProseWordContent(_ scalar: Unicode.Scalar) -> Bool {
+        if isLetter(scalar) { return true }
+        switch scalar.properties.generalCategory {
+        case .nonspacingMark, .spacingMark, .enclosingMark:
+            return true
+        default:
+            return scalar.properties.numericType == .decimal || scalar.properties.numericType == .digit
+        }
+    }
+
+    private static func isIdentifierLine(_ scalars: [Unicode.Scalar]) -> Bool {
+        var hasBoundary = false
+        for (index, scalar) in scalars.enumerated() {
+            if scalar == "_" || scalar == "-" {
+                hasBoundary = true
+                continue
+            }
+            guard !scalar.properties.isWhitespace, isProseWordContent(scalar) else { return false }
+            if index > 0, isLower(scalars[index - 1]), isUpper(scalar) {
+                hasBoundary = true
+            }
+        }
+        return hasBoundary
+    }
+
+    private static func isProseWordScalar(_ scalars: [Unicode.Scalar], at index: Int) -> Bool {
+        let scalar = scalars[index]
+        if isProseWordContent(scalar) { return true }
+        guard scalar == "'" || scalar == "’", index > 0, index + 1 < scalars.count else {
+            return false
+        }
+        return isLetter(scalars[index - 1]) && isLetter(scalars[index + 1])
+    }
+
+    private static func startsSentence(_ scalars: [Unicode.Scalar], after index: Int) -> Bool {
+        guard scalars[index] == "." || scalars[index] == "!" || scalars[index] == "?" else {
+            return false
+        }
+        var next = index + 1
+        while next < scalars.count, ["'", "\"", "’", "”", ")", "]"].contains(scalars[next]) {
+            next += 1
+        }
+        return next < scalars.count && scalars[next].properties.isWhitespace
+    }
+
+    private static func convertProseWord(
+        _ word: [Unicode.Scalar], style: Style, sentenceStart: Bool, lineHasLowercase: Bool
+    ) -> String {
+        let letters = word.filter { isLetter($0) }
+        guard !letters.isEmpty else { return string(from: word) }
+
+        // All-caps prose is normalized; acronyms in mixed-case prose are preserved.
+        let allUppercase = letters.allSatisfy { isUpper($0) }
+        let preserve = allUppercase
+            ? letters.count >= 2 && lineHasLowercase
+            : letters.dropFirst().contains { isUpper($0) }
+        if preserve { return string(from: word) }
+
+        let uppercaseFirst = style == .title || sentenceStart || isPronounI(word)
+        var result = ""
+        var isFirstLetter = true
+        for scalar in word {
+            guard isLetter(scalar) else {
+                result.unicodeScalars.append(scalar)
+                continue
+            }
+            result += uppercaseFirst && isFirstLetter
+                ? scalar.properties.uppercaseMapping
+                : scalar.properties.lowercaseMapping
+            isFirstLetter = false
+        }
+        return result
+    }
+
+    /// "I" and its contractions ("I'm", "I’ll") stay capitalized in Sentence case.
+    private static func isPronounI(_ word: [Unicode.Scalar]) -> Bool {
+        guard let first = word.first, first == "i" || first == "I" else { return false }
+        return word.count == 1 || word[1] == "'" || word[1] == "’"
+    }
+
+    private static func convertProse(_ scalars: [Unicode.Scalar], style: Style) -> String {
+        let lineHasLowercase = scalars.contains { isLower($0) }
+        var result = ""
+        var index = 0
+        var sentenceStart = true
+
+        while index < scalars.count {
+            guard isProseWordScalar(scalars, at: index) else {
+                if startsSentence(scalars, after: index) { sentenceStart = true }
+                result.unicodeScalars.append(scalars[index])
+                index += 1
+                continue
+            }
+
+            let start = index
+            repeat { index += 1 } while index < scalars.count && isProseWordScalar(scalars, at: index)
+            let word = Array(scalars[start..<index])
+            result += convertProseWord(
+                word, style: style, sentenceStart: sentenceStart, lineHasLowercase: lineHasLowercase
+            )
+            if word.contains(where: { isLetter($0) }) { sentenceStart = false }
+        }
+        return result
+    }
+
     // MARK: - Style converters (split-based)
 
     static func convertSplit(_ text: String, style: Style, cancellation: CancellationCheck) -> String? {
@@ -319,6 +433,15 @@ public enum CaseTools {
                     output.append(contentsOf: lineBreak.utf8)
                 }
                 continue
+            }
+
+            if style == .title || style == .sentence {
+                let scalars = Array(content.unicodeScalars)
+                if !isIdentifierLine(scalars) {
+                    output.append(contentsOf: convertProse(scalars, style: style).utf8)
+                    output.append(contentsOf: lineBreak.utf8)
+                    continue
+                }
             }
 
             let words = splitWords(content)

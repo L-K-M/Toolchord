@@ -173,11 +173,19 @@ private struct CommandList: View {
                                     CommandRow(command: command, isSelected: id == session.selectedID)
                                         .id(id)
                                         .contentShape(Rectangle())
-                                        .onTapGesture(count: 2) {
-                                            session.select(id)
-                                            actions.openSelected()
+                                        // One tap selects; a second tap on the already-selected row
+                                        // opens it. A double-tap gesture would hold every single
+                                        // tap for the double-tap timeout, so it is not used.
+                                        .onTapGesture {
+                                            if session.selectedID == id {
+                                                actions.openSelected()
+                                            } else {
+                                                session.select(id)
+                                            }
                                         }
-                                        .onTapGesture { session.select(id) }
+                                        .accessibilityAction {
+                                            session.select(id)
+                                        }
                                         .accessibilityAction(named: "Open") {
                                             session.select(id)
                                             actions.openSelected()
@@ -295,7 +303,32 @@ private struct ToolHeader: View {
     let actions: PaletteActions
 
     var body: some View {
-        HStack(spacing: 10) {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 10) {
+                title
+                Spacer(minLength: 8)
+                OptionsBar(session: session, command: command)
+            }
+            // Measure the whole row before allowing the title or option
+            // labels to compress. Dense options get their own row below.
+            .fixedSize(horizontal: true, vertical: false)
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 10) {
+                    title
+                    Spacer(minLength: 0)
+                }
+                OptionsBar(session: session, command: command)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .frame(minHeight: 58)
+    }
+
+    private var title: some View {
+        Group {
             Button(action: actions.back) {
                 Label("Tools", systemImage: "chevron.left")
                     .font(.system(size: 12.5))
@@ -306,11 +339,7 @@ private struct ToolHeader: View {
             Text(command.title)
                 .font(.system(size: 15, weight: .semibold))
                 .lineLimit(1)
-            Spacer(minLength: 8)
-            OptionsBar(session: session, command: command)
         }
-        .padding(.horizontal, 16)
-        .frame(height: 58)
     }
 }
 
@@ -413,17 +442,25 @@ private struct ResultContent: View {
     let focus: PaletteFocus?
 
     var body: some View {
-        switch session.preview {
-        case .none:
+        // One branch for ready results and pending ones that still show the
+        // previous result, so re-evaluation updates the same views instead of
+        // replacing them (which lost the result's scroll position). New input
+        // (not an edit) gets new views, which start at the top.
+        if let shown = shownResult {
+            content(for: shown.result, dimmed: shown.dimmed)
+                .id(session.inputGeneration)
+        } else if session.preview.isPending {
+            DelayedProgress()
+        } else {
             EmptyState(symbol: "questionmark", title: "No result", message: "")
-        case .pending(let previous):
-            if let previous {
-                content(for: previous, dimmed: true)
-            } else {
-                DelayedProgress()
-            }
-        case .ready(let result):
-            content(for: result, dimmed: false)
+        }
+    }
+
+    private var shownResult: (result: ToolResult, dimmed: Bool)? {
+        switch session.preview {
+        case .ready(let result): (result, false)
+        case .pending(let previous?): (previous, true)
+        case .pending(nil), .none: nil
         }
     }
 
@@ -438,6 +475,7 @@ private struct ResultContent: View {
             )
         case .success(let output):
             SuccessView(output: output, command: command, dimmed: dimmed, actions: actions, focus: focus, isTool: session.isInTool)
+                .id(command.id)
         case .invalid(let diagnostic):
             ErrorView(diagnostic: diagnostic, input: session.payload?.text)
         case .unsupported(let message):
@@ -455,6 +493,7 @@ private struct SuccessView: View {
     let actions: PaletteActions
     let focus: PaletteFocus?
     var isTool = false
+    @State private var warningsExpanded = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -485,15 +524,20 @@ private struct SuccessView: View {
                         .opacity(dimmed ? 0.45 : 1)
                 }
             }
-            WarningsView(warnings: output.warnings)
+            WarningsView(warnings: output.warnings, isExpanded: $warningsExpanded)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .onChange(of: output.warnings) { _, _ in warningsExpanded = false }
+        .onChange(of: dimmed) { _, pending in
+            if pending { warningsExpanded = false }
+        }
     }
 
     private var resultText: some View {
         ResultTextView(
             text: output.primaryText,
             syntax: output.syntax,
+            identity: command.id,
             dimmed: dimmed,
             accessibilityLabel: "Result of \(command.title)",
             focus: focus
@@ -558,23 +602,28 @@ private struct FieldRow: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Text(field.label)
-                .font(.system(size: 11.5, weight: .medium))
-                .foregroundStyle(.secondary)
-                .frame(width: 112, alignment: .leading)
-                .lineLimit(2)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(field.value.isEmpty ? "(empty)" : field.value)
-                    .font(field.isMonospaced ? .system(size: 12, design: .monospaced) : .system(size: 12.5))
-                    .foregroundStyle(field.value.isEmpty ? Color.secondary : toneColor)
-                    .lineLimit(4)
-                    .textSelection(.enabled)
-                if let note = field.note {
-                    Text(note)
-                        .font(.system(size: 11))
-                        .foregroundStyle(field.tone == .warning ? Theme.warning : Color.secondary)
+            // Combine only the text so the Copy button stays a separate
+            // accessibility element with its own label and action.
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text(field.label)
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 112, alignment: .leading)
+                    .lineLimit(2)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(field.value.isEmpty ? "(empty)" : field.value)
+                        .font(field.isMonospaced ? .system(size: 12, design: .monospaced) : .system(size: 12.5))
+                        .foregroundStyle(field.value.isEmpty ? Color.secondary : toneColor)
+                        .lineLimit(4)
+                        .textSelection(.enabled)
+                    if let note = field.note {
+                        Text(note)
+                            .font(.system(size: 11))
+                            .foregroundStyle(field.tone == .warning ? Theme.warning : Color.secondary)
+                    }
                 }
             }
+            .accessibilityElement(children: .combine)
             Spacer(minLength: 4)
             if field.isCopyable {
                 Button {
@@ -590,7 +639,6 @@ private struct FieldRow: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
-        .accessibilityElement(children: .combine)
     }
 
     private var toneColor: Color {
@@ -614,30 +662,6 @@ private struct SwatchView: View {
             .frame(height: 30)
             .accessibilityElement(children: .ignore)
         .accessibilityLabel("Color swatch \(label)")
-    }
-}
-
-private struct WarningsView: View {
-    let warnings: [String]
-
-    var body: some View {
-        if !warnings.isEmpty {
-            VStack(alignment: .leading, spacing: 4) {
-                ForEach(Array(warnings.prefix(3).enumerated()), id: \.offset) { _, warning in
-                    Label {
-                        Text(warning).font(.system(size: 11.5))
-                    } icon: {
-                        Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Theme.warning)
-                    }
-                }
-                if warnings.count > 3 {
-                    Text("\(warnings.count - 3) more warnings")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .accessibilityElement(children: .combine)
-        }
     }
 }
 
@@ -774,35 +798,49 @@ private struct OptionsBar: View {
 
     var body: some View {
         if !command.options.isEmpty {
-            let options = session.options(for: command.id)
-            HStack(spacing: 12) {
-                ForEach(command.options) { option in
-                    switch option.kind {
-                    case .choice(let choices, let defaultID):
-                        Picker(option.label, selection: Binding(
-                            get: { options.choice(option.id, default: defaultID) },
-                            set: { session.setOption(option.id, to: $0, for: command.id) }
-                        )) {
-                            ForEach(choices) { choice in
-                                Text(choice.label).tag(choice.id)
-                            }
+            ViewThatFits(in: .horizontal) {
+                optionRow(presentation: .segments)
+                optionRow(presentation: .menus)
+            }
+        }
+    }
+
+    private enum Presentation { case segments, menus }
+
+    private func optionRow(presentation: Presentation) -> some View {
+        let options = session.options(for: command.id)
+        return HStack(spacing: 12) {
+            ForEach(command.options) { option in
+                switch option.kind {
+                case .choice(let choices, let defaultID):
+                    let picker = Picker(option.label, selection: Binding(
+                        get: { options.choice(option.id, default: defaultID) },
+                        set: { session.setOption(option.id, to: $0, for: command.id) }
+                    )) {
+                        ForEach(choices) { choice in
+                            Text(choice.label).tag(choice.id)
                         }
-                        .pickerStyle(.segmented)
-                        .fixedSize()
-                        .controlSize(.small)
-                        .help(option.label)
-                    case .toggle(let defaultValue):
-                        Toggle(option.label, isOn: Binding(
-                            get: { options.flag(option.id, default: defaultValue) },
-                            set: { session.setOption(option.id, to: $0 ? "true" : "false", for: command.id) }
-                        ))
-                        .toggleStyle(.checkbox)
-                        .controlSize(.small)
-                        .font(.system(size: 11.5))
                     }
+                    .controlSize(.small)
+                    .help(option.label)
+                    .accessibilityLabel(option.label)
+
+                    switch presentation {
+                    case .segments: picker.pickerStyle(.segmented)
+                    case .menus: picker.pickerStyle(.menu)
+                    }
+                case .toggle(let defaultValue):
+                    Toggle(option.label, isOn: Binding(
+                        get: { options.flag(option.id, default: defaultValue) },
+                        set: { session.setOption(option.id, to: $0 ? "true" : "false", for: command.id) }
+                    ))
+                    .toggleStyle(.checkbox)
+                    .controlSize(.small)
+                    .font(.system(size: 11.5))
                 }
             }
         }
+        .fixedSize(horizontal: true, vertical: false)
     }
 }
 

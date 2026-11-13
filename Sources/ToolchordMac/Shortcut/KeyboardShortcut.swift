@@ -89,13 +89,20 @@ public struct KeyboardShortcut: Codable, Hashable, Sendable {
         return nil
     }
 
+    /// Main actor only: the macOS shortcut and keyboard layout lookups aren't
+    /// thread safe.
+    @MainActor
     public var problem: Problem? {
-        validationProblem(character: KeyNames.asciiCapableCharacter(for: keyCode, commandState: modifierFlags.contains(.command)))
+        validationProblem(
+            character: KeyNames.asciiCapableCharacter(for: keyCode, commandState: modifierFlags.contains(.command)),
+            systemShortcuts: .current()
+        )
     }
 
     /// Letter reservations follow the layout used for the shortcut's label,
-    /// while Space and Tab retain their layout-independent key codes.
-    func validationProblem(character: String?) -> Problem? {
+    /// while Space and Tab retain their layout-independent key codes. A macOS
+    /// shortcut is reserved only while it's on in `systemShortcuts`.
+    func validationProblem(character: String?, systemShortcuts: SystemShortcuts) -> Problem? {
         let flags = modifierFlags
         let isFunctionKey = KeyNames.isFunctionKey(keyCode)
         if !isFunctionKey && flags.intersection([.command, .control, .option]).isEmpty {
@@ -105,15 +112,24 @@ public struct KeyboardShortcut: Codable, Hashable, Sendable {
             return .reserved("⌘Q quits apps.")
         }
         let space = UInt32(kVK_Space)
+        let reason: String
         switch (keyCode, flags) {
-        case (space, [.command]): return .reserved("⌘Space opens Spotlight.")
-        case (space, [.command, .option]): return .reserved("⌥⌘Space opens a Finder search window.")
-        case (space, [.control]): return .reserved("⌃Space switches input sources.")
-        case (space, [.control, .option]): return .reserved("⌃⌥Space switches input sources.")
-        case (UInt32(kVK_Tab), [.command]), (UInt32(kVK_Tab), [.command, .shift]): return .reserved("⌘Tab switches apps.")
-        case (UInt32(kVK_ANSI_Grave), [.command]): return .reserved("⌘` switches windows.")
+        case (space, [.command]): reason = "⌘Space opens Spotlight. " + Self.turnOffHint("Spotlight")
+        case (space, [.command, .option]): reason = "⌥⌘Space opens a Finder search window. " + Self.turnOffHint("Spotlight")
+        case (space, [.control]): reason = "⌃Space switches input sources. " + Self.turnOffHint("Input Sources")
+        case (space, [.control, .option]): reason = "⌃⌥Space switches input sources. " + Self.turnOffHint("Input Sources")
+        // The app switcher has no setting to turn it off.
+        case (UInt32(kVK_Tab), [.command]), (UInt32(kVK_Tab), [.command, .shift]): reason = "⌘Tab switches apps."
+        // The key's label: ⌘< on ISO keyboards such as Swiss German.
+        case (UInt32(kVK_ANSI_Grave), [.command]): reason = "\(displayString) switches windows. " + Self.turnOffHint("Keyboard")
         default: return nil
         }
+        return systemShortcuts.mayUse(self) ? .reserved(reason) : nil
+    }
+
+    /// Where to turn off a macOS shortcut, by its Keyboard Shortcuts section.
+    private static func turnOffHint(_ section: String) -> String {
+        "To use it here, turn it off in System Settings → Keyboard → Keyboard Shortcuts → \(section)."
     }
 }
 

@@ -20,3 +20,10 @@ All notable changes to this project are documented here. The format follows
   review workflow. Build/install and release signing retain App Sandbox
   restrictions; the release stub generates the project and keeps the
   committed XcodeGen version source in sync with release tags.
+
+### Fixed
+
+- The shortcut recorder no longer rejects macOS shortcuts that are turned
+  off in System Settings, such as ⌃⌥Space when the input source shortcuts
+  are off or ⌘Space when Spotlight's is. It asks macOS which ones are on,
+  and its message says where to turn one off.
