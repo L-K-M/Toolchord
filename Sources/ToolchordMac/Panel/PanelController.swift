@@ -223,6 +223,10 @@ public final class PanelController: NSObject, PaletteActions, PaletteCommandHand
     /// The ⌘V button: send a real paste command to the search field so the
     /// read goes through the same path as typing ⌘V.
     func pasteFromClipboard() {
+        if session.isInTool, session.selectedCommand?.isGenerator == true {
+            session.rejectPaste(reason: "Generators create a new value and don’t use input.")
+            return
+        }
         if session.isInTool {
             focus.focusEditor()
         } else {
