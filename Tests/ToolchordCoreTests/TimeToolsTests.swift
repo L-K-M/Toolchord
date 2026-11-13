@@ -29,10 +29,35 @@ import Testing
     }
 
     @Test(arguments: [
+        ("1700000000", "2023-11-14T22:13:20.000Z", "Read as seconds"),
+        ("1700000000000", "2023-11-14T22:13:20.000Z", "Read as milliseconds"),
+        ("1700000000.5", "2023-11-14T22:13:20.500Z", "Read as seconds"),
+        ("-1", "1969-12-31T23:59:59.000Z", "Read as seconds"),
+        ("253402300799", "9999-12-31T23:59:59.000Z", "Read as seconds"),
+        ("253402300800", "1978-01-11T21:31:40.800Z", "Read as milliseconds"),
+        ("-62135596801", "1968-01-12T20:06:43.199Z", "Read as milliseconds"),
+    ])
+    func autoUnixFixtures(_ fixture: (String, String, String)) throws {
+        let tool = try command("time.fromUnix")
+        for options in [ToolOptions(), ToolOptions(["unit": "auto"])] {
+            let result = tool.run(ToolRequest(input: .text(fixture.0), options: options, now: now, timeZone: utc))
+            let value = try #require(result.output, "Expected success, got \(result)")
+            #expect(value.primaryText == fixture.1)
+            #expect(value.status == fixture.2)
+        }
+    }
+
+    @Test(arguments: ["1700000000000.5", "253402300800000", "-62135596800001", "9223372036854775808", "1.2345", "1.0000", "1e3"])
+    func autoUnixPreservesSecondsErrors(_ input: String) throws {
+        #expect(try result("time.fromUnix", input, unit: "auto") == result("time.fromUnix", input, unit: "s"))
+    }
+
+    @Test(arguments: [
         ("0", "s", "1970-01-01T00:00:00.000Z"),
         ("-1", "s", "1969-12-31T23:59:59.000Z"),
         ("1700000000", "s", "2023-11-14T22:13:20.000Z"),
         ("1700000000000", "ms", "2023-11-14T22:13:20.000Z"),
+        ("1700000000", "ms", "1970-01-20T16:13:20.000Z"),
         ("1.5", "s", "1970-01-01T00:00:01.500Z"),
         ("253402300799.999", "s", "9999-12-31T23:59:59.999Z"),
         ("-62135596800", "s", "0001-01-01T00:00:00.000Z"),
@@ -52,6 +77,7 @@ import Testing
     }
 
     @Test(arguments: [
+        ("1700000000000.5", "auto", "Out of range. Toolchord supports dates from year 0001 to 9999."),
         ("1700000000000", "s", "Out of range. Toolchord supports dates from year 0001 to 9999. If this is a millisecond timestamp, set Unit to Milliseconds."),
         // Read as milliseconds, this is in 1968: the hint is required.
         ("-62135596801", "s", "Out of range. Toolchord supports dates from year 0001 to 9999. If this is a millisecond timestamp, set Unit to Milliseconds."),
@@ -246,6 +272,8 @@ import Testing
         let to = try command("time.toUnix")
         let current = try command("time.now")
         #expect(from.group == .time)
+        #expect(from.options == [.choice("unit", "Unit", [.init("auto", "Auto"), .init("s", "Seconds"), .init("ms", "Milliseconds")], default: "auto")])
+        #expect(to.options == [.choice("unit", "Unit", [.init("s", "Seconds"), .init("ms", "Milliseconds")], default: "s")])
         #expect(to.copyAndCloseTitle(options: ToolOptions(["unit": "ms"])) == "Copy milliseconds & Close")
         #expect(current.copyAndCloseTitle(options: ToolOptions(["format": "iso"])) == "Copy UTC time & Close")
         #expect(current.isGenerator)

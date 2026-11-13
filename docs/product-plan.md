@@ -19,7 +19,7 @@ Seven core tools from the original plan, plus the consensus tools that research 
 | **Base64** | Encode and decode with the standard alphabet (padded) or Base64URL (unpadded), as separate commands so the alphabet is always explicit. Strict decoding, optional whitespace tolerance, and a clear error for non-UTF-8 bytes. |
 | **URL** | Percent-encode or decode a component once. **Inspect URL** shows scheme, host, port, path, and fragment, plus every query parameter in order with its own Copy control; the primary result is the ordered parameter list as JSON. |
 | **JWT** | Decode the header and claims with **Signature unverified** shown as a warning, a readable expiry, a field per claim, and tolerance for a pasted `Bearer` prefix. |
-| **Time** | Unix seconds or milliseconds (explicit unit) to RFC 3339 UTC, with local time and a relative description; RFC 3339 dates (offset required) to Unix time; and the current time, captured once. |
+| **Time** | Unix time (Auto reads seconds first, then whole milliseconds only when seconds are out of range; explicit units available) to RFC 3339 UTC, with local time and a relative description; RFC 3339 dates (offset required) to Unix time; and the current time, captured once. |
 | **Identifiers** | UUID v4, UUID v7 (with its embedded timestamp), and ULID. Each stays stable on screen until **Regenerate** (⌘R). |
 | **Random** | Random strings from the system's secure generator (length and alphabet options) and lorem ipsum (sentence to five paragraphs). |
 | **Hash** | SHA-256, SHA-512, SHA-1, and MD5 of the UTF-8 text, with a warning on the legacy algorithms. |
