@@ -354,7 +354,7 @@ public final class PanelController: NSObject, PaletteActions, PaletteCommandHand
 
         menu.addItem(.separator())
         menu.addItem(item("Settings…", key: ",", modifiers: [.command], enabled: true) { [weak self] in self?.openSettings() })
-        menu.addItem(item("Close Toolchord", key: "w", modifiers: [.command], enabled: true) { [weak self] in self?.dismiss(.completed) })
+        menu.addItem(item("Close Panel", key: "w", modifiers: [.command], enabled: true) { [weak self] in self?.dismiss(.completed) })
         return menu
     }
 

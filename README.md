@@ -76,7 +76,7 @@ Settings (from the menu bar icon or ⌘, in the palette) cover the shortcut, ope
 make test
 ```
 
-458 tests cover every tool fixture, a robustness sweep that runs each command against awkward input, the session's stale-result and copy rules, and the Mac layer's logic.
+More than 400 tests cover every tool fixture, a robustness sweep that runs each command against awkward input, the session's stale-result and copy rules, and the Mac layer's logic.
 
 ```bash
 make snapshots

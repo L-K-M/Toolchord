@@ -278,6 +278,39 @@ import Testing
 }
 
 
+@Suite struct NumberTrailingUnderscoreTests {
+    @Test(arguments: [
+        ("123_", "auto", 1, 4),
+        ("123_", "10", 1, 4),
+        ("ff_", "16", 1, 3),
+        ("101_", "2", 1, 4),
+        ("77_", "8", 1, 3),
+        ("-123_", "auto", 1, 5),
+        ("-0xff_", "auto", 1, 6),
+        ("-0b101_", "auto", 1, 7),
+        ("0o77_", "auto", 1, 5),
+        ("  123_  ", "10", 1, 6),
+        ("\n  -0xff_ \n", "16", 2, 8),
+    ])
+    func rejectsDanglingSeparator(input: String, base: String, line: Int, column: Int) {
+        for command in NumberTools.commands {
+            let result = command.run(ToolRequest(text: input, options: ["from": base]))
+            guard case .invalid(let diagnostic) = result else {
+                Issue.record("Expected invalid for \(command.id), got \(result)")
+                continue
+            }
+            #expect(diagnostic.location?.line == line)
+            #expect(diagnostic.location?.column == column)
+        }
+    }
+
+    @Test func acceptsEmbeddedSeparators() throws {
+        let command = try #require(NumberTools.commands.first { $0.id == "number.decimal" })
+        #expect(command.run(ToolRequest(text: "1_000_000")).output?.primaryText == "1000000")
+        #expect(command.run(ToolRequest(text: "0xff_00")).output?.primaryText == "65280")
+    }
+}
+
 @Suite struct NumberLocationTests {
     @Test func locationsPointIntoTheOriginalInput() throws {
         let command = try #require(NumberTools.commands.first { $0.id == "number.hex" })

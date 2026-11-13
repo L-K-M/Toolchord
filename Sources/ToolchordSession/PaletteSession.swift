@@ -105,6 +105,9 @@ public final class PaletteSession {
     public private(set) var sessionID = UUID()
     public private(set) var query = ""
     public private(set) var payload: Payload?
+    /// Increases whenever input is attached or removed, but not when it is
+    /// edited, so views can tell a new document from an edit to the same one.
+    public private(set) var inputGeneration = 0
     public private(set) var listing: CommandListing
     public private(set) var selectedID: String?
     public private(set) var mode: PaletteMode = .search
@@ -125,6 +128,9 @@ public final class PaletteSession {
     @ObservationIgnored private var selectionIsExplicit = false
     @ObservationIgnored private(set) var revision = 0
     @ObservationIgnored private var evaluationTask: Task<Void, Never>?
+    /// Two slots: a newer change can start while a superseded evaluation that
+    /// cannot stop early finishes, but further changes wait instead of piling on.
+    @ObservationIgnored private let evaluationSlots = EvaluationSlots(limit: 2)
     @ObservationIgnored private var lastReady: (commandID: String, result: ToolResult)?
     @ObservationIgnored private var noticeCounter = 0
     /// Set after init and ``end()``; cleared by ``activate()`` or any change.
@@ -266,6 +272,7 @@ public final class PaletteSession {
     /// Attaches pasted text, replacing any attachment and keeping the query.
     public func attach(_ text: String) {
         payload = Payload(text: text, source: .pasted, limits: limits)
+        inputGeneration += 1
         if !rebuildListing(.payload) { scheduleEvaluation() }
     }
 
@@ -286,6 +293,7 @@ public final class PaletteSession {
     public func clearInput() {
         guard payload != nil else { return }
         payload = nil
+        inputGeneration += 1
         isActionsMenuOpen = false
         if !rebuildListing(.payload) { scheduleEvaluation() }
     }
@@ -294,6 +302,7 @@ public final class PaletteSession {
     public func useAsSearchText() {
         guard canUseAsSearchText, let text = payload?.text else { return }
         payload = nil
+        inputGeneration += 1
         isActionsMenuOpen = false
         mode = .search
         query = text.trimmingCharacters(in: .whitespaces)
@@ -397,6 +406,9 @@ public final class PaletteSession {
         }
     }
 
+    /// Evaluations waiting for a free slot. For tests.
+    var queuedEvaluationCount: Int { evaluationSlots.waitingCount }
+
     // MARK: - Session lifetime
 
     /// Retires the draft: cancels pending work, clears every value, and
@@ -408,6 +420,7 @@ public final class PaletteSession {
         revision += 1
         query = ""
         payload = nil
+        inputGeneration += 1
         mode = .search
         isActionsMenuOpen = false
         notice = nil
@@ -523,11 +536,16 @@ public final class PaletteSession {
         preview = .pending(previous: previous)
 
         let evaluator = self.evaluator
+        let slots = evaluationSlots
         evaluationTask = Task { [weak self] in
             if let delay {
                 try? await Task.sleep(for: delay)
             }
             // Superseded before it started: never hand stale work to the evaluator.
+            if Task.isCancelled { return }
+            await slots.acquire()
+            defer { slots.release() }
+            // Superseded while waiting for a slot.
             if Task.isCancelled { return }
             let result = await evaluator.evaluate(command, request)
             guard !Task.isCancelled, let self else { return }

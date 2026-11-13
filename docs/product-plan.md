@@ -4,7 +4,7 @@ Toolchord is a native macOS command palette for the small tasks developers do be
 
 The [shortcut UX](shortcut-ux.md) specifies panel behavior. The [implementation contracts](implementation-contracts.md) define results, copy targets, format rules, and fixtures. The [research](research.md) covers competitors, demand, and macOS constraints, and the [design review](design-review.md) explains how the proposed mockups shaped the final panel.
 
-**Status:** implemented. The app, its 56 commands, and 458 automated tests are in this repository; see the [README](../README.md) to build and run it.
+**Status:** implemented. The app, its 56 commands, and more than 400 automated tests are in this repository; see the [README](../README.md) to build and run it.
 
 ![Toolchord with pasted JSON: suggested tools on the left, a syntax-colored preview on the right, and Copy JSON & Close in the footer.](images/search-json.png)
 

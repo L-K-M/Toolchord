@@ -184,6 +184,9 @@ struct InputEditor: NSViewRepresentable {
 struct ResultTextView: NSViewRepresentable {
     let text: String
     let syntax: SyntaxKind
+    /// What the result belongs to, such as the command ID. New text with the
+    /// same identity comes from an edit, so the reader keeps their place.
+    let identity: String
     let dimmed: Bool
     let accessibilityLabel: String
     var focus: PaletteFocus?
@@ -206,17 +209,30 @@ struct ResultTextView: NSViewRepresentable {
     }
 
     private func apply(to textView: CodeTextView, coordinator: Coordinator) {
-        if !(coordinator.text.map { $0.hasSameUTF8(as: text) } ?? false) || coordinator.syntax != syntax {
-            coordinator.text = text
-            coordinator.syntax = syntax
-            textView.textStorage?.setAttributedString(SyntaxHighlighter.attributedString(for: text, syntax: syntax))
-            textView.scroll(.zero)
-        }
+        coordinator.show(text, syntax: syntax, identity: identity, in: textView)
         textView.alphaValue = dimmed ? 0.45 : 1
     }
 
+    @MainActor
     final class Coordinator {
-        var text: String?
-        var syntax: SyntaxKind?
+        private var text: String?
+        private var syntax: SyntaxKind?
+        private var identity: String?
+
+        /// Shows `text` in `textView`. A result for a different identity starts
+        /// at the top, even when its text is the same; a changed result for the
+        /// same identity, such as after an edit to the input, keeps the scroll
+        /// position (AppKit clamps it when the new text is shorter).
+        func show(_ text: String, syntax: SyntaxKind, identity: String, in textView: NSTextView) {
+            let isNewResult = identity != self.identity
+            self.identity = identity
+            let isSameText = self.text.map { $0.hasSameUTF8(as: text) } ?? false
+            if !isSameText || syntax != self.syntax {
+                self.text = text
+                self.syntax = syntax
+                textView.textStorage?.setAttributedString(SyntaxHighlighter.attributedString(for: text, syntax: syntax))
+            }
+            if isNewResult { textView.scroll(.zero) }
+        }
     }
 }

@@ -1,9 +1,9 @@
 # Remaining Toolchord findings
 
-Reviewed against `6353e69` (Longcat review) and consolidated with the earlier review of
-`6714272`. File/line references refer to the review baseline. Findings implemented in open PRs are
-omitted. All remaining findings are optional improvements; observations that still need live
-validation are identified below.
+Reviewed against `6353e69` (Longcat review) and consolidated with the earlier review of `6714272`
+and Claude's review of the same baseline. File/line references refer to the review baseline.
+Findings implemented in open PRs are omitted. All remaining findings are optional improvements;
+observations that still need live validation are identified below.
 
 ## Bugs
 
@@ -26,10 +26,13 @@ bugs — nice-to-have
 Location: `Sources/ToolchordCore/Detection/InputDetector.swift:48-55,143-151`;
 `Sources/ToolchordCore/Tools/JWTTools.swift:14-17`. Developers pasting a complete Authorization
 value must manually search for Decode JWT, even though the decoder explicitly accepts the prefix.
-The detector's single-token gate excludes the space after Bearer.
+The detector's single-token gate excludes the space after Bearer. The decoder itself strips the
+prefix only when spaces follow it: `Bearer\t<token>` fails with "The header isn't valid
+Base64URL: Base64 contains whitespace".
 
 Suggested fix: recognize a bounded Bearer-prefixed token for detection without modifying the
-attached input; keep the decoder's removal warning. Rough effort: 1 hour.
+attached input; keep the decoder's removal warning. Accept any whitespace after `Bearer` in the
+decoder (`JWTTools.swift:17`). Rough effort: 1 hour.
 
 ### BOM-bearing XML misses XML suggestions
 
@@ -64,6 +67,54 @@ Unescape HTML. This affects uncommon numeric-entity input.
 
 Suggested fix: align the bounded numeric-reference lookahead with the decoder's limit, without
 broadening named-entity support accidentally. Rough effort: 1 hour.
+
+### Slugs ignore camelCase and acronym boundaries
+
+bugs — nice-to-have
+
+Location: `Sources/ToolchordCore/Tools/CaseTools.swift:435-460`. Convert to Slug transliterates
+and lowercases before splitting, so `helloWorld XMLHttpRequest` becomes
+`helloworld-xmlhttprequest` instead of `hello-world-xml-http-request`, against the shared
+word-splitting rules for case conversion and slugs. Confirmed against the built module.
+
+Suggested fix: split each line with `splitWords` first, then transliterate and join with hyphens.
+Rough effort: 1 hour.
+
+### Combining marks hide case boundaries
+
+bugs — nice-to-have
+
+Location: `Sources/ToolchordCore/Tools/CaseTools.swift:241-245`. Boundary detection looks at the
+previous scalar, so a combining mark hides the lowercase letter before it: decomposed
+`e\u{0301}Name` becomes `éname` in snake_case instead of `é_name`. This affects NFD text such
+as file names copied from Finder. Confirmed against the built module.
+
+Suggested fix: decide boundaries from the base letter before any combining marks. Rough effort:
+1 hour.
+
+### Hidden HTML leaks after a stray end tag or with `!important`
+
+bugs — nice-to-have
+
+Location: `Sources/ToolchordCore/Tools/Markup/HTMLTextConverter.swift:59,279` (open PR #20 changes
+this file for self-closing slashes). `<div hidden>secret</p>leak</div>visible` converts to
+`leak` and `visible`, while a browser shows only `visible`, and
+`<span style="display:none!important;display:block">secret</span>` shows `secret`. Confirmed
+against the built module.
+
+Suggested fix: end suppression only when the hidden element or an ancestor closes, and honor
+`!important` when resolving `display`. Rough effort: 2 hours, after #20 lands.
+
+### Make Plain Text counts a trimmed converted space twice
+
+bugs — nice-to-have
+
+Location: `Sources/ToolchordCore/Tools/PlainTextTools.swift:236-255`, with the trailing counts at
+163, 172, 182 and 290. A non-breaking space at a line end counts as a normalized space and again
+as a trimmed trailing space: `a\u{00A0} \nb` reports "3 changes" for two removed characters.
+
+Suggested fix: count a trimmed space as trailing only if it was not already counted as a normalized
+space. Rough effort: 30 minutes.
 
 ## General issues
 
@@ -130,6 +181,28 @@ used; the UI derives the needs-input state from the result. Dead code adds maint
 Suggested fix: remove it, or use it in the view layer if it expresses a real rule. Rough effort:
 minutes.
 
+### `Scripts/` and `scripts/` coexist
+
+general issues — nice-to-have
+
+Location: `Scripts/make-icon.swift` beside `scripts/*.sh`; `Makefile:38`;
+`docs/implementation-contracts.md:224`. On case-insensitive macOS the two folders are one; on
+Linux CI they are two, so moves and globs behave differently per platform.
+
+Suggested fix: move `make-icon.swift` into `scripts/` and update the Makefile and docs. Rough
+effort: 15 minutes.
+
+### `PaletteView.swift` holds more than 20 types in 981 lines
+
+general issues — nice-to-have
+
+Location: `Sources/ToolchordMac/Views/PaletteView.swift`. This goes against the one-type-per-file
+convention, and every UI change touches the same file, so concurrent PRs conflict (#21, #22,
+#23, #24, #30 and #36 all edit it).
+
+Suggested fix: extract views into their own files as they change, starting with the most edited
+(command list, results, options). Rough effort: about 2 hours.
+
 ## Performance problems, stuttering, and jank
 
 ### Near-limit Markdown conversion takes about one second
@@ -146,7 +219,8 @@ acknowledged in the implementation contracts.
 
 Suggested fix: profile parser versus reconstruction cost, consider a longer debounce for large
 edits or a cancellable parser only if measurements justify the dependency and fidelity tradeoffs.
-Skipping a new conversion while one for the same command is running would also bound the pile-up.
+Open PR #35 bounds the pile-up (at most two evaluations run at once); the conversion itself still
+takes about a second.
 Preserve current copy gating. Rough effort: 1-3 days for profiling and a bounded improvement;
 parser replacement needs separate design.
 
@@ -157,7 +231,8 @@ performance problems, stuttering, and jank — nice-to-have
 Location: `Sources/ToolchordCore/Tools/CaseTools.swift:336-358,405-473`. Large single-line payloads
 still finish scanning/splitting/transliterating after their results are obsolete; line-based
 checks do not help them. Case conversions measured about 183-317 ms at near 1 MiB, off the main
-actor. Repeated edits can waste CPU.
+actor. Repeated edits can waste CPU. In a release build, snake_case of a single 1 MiB line ran
+234 ms without a single cancellation check.
 
 Suggested fix: add cancellation checkpoints during scalar/byte scanning and avoid intermediate
 Character arrays where practical. Measure single-line and multiline payloads independently;
@@ -170,10 +245,13 @@ performance problems, stuttering, and jank — nice-to-have
 
 Location: `Sources/ToolchordMac/Views/PaletteView.swift:526-530`. Large JWT/URL fields are
 traversed completely when estimating a row that shows at most four lines. This is avoidable work on
-view updates; an actual frame stall was not measured.
+view updates. In a release build, walking every `Character` of a 1 MiB value took 38 ms, and
+SwiftUI also lays out the whole `Text` despite `lineLimit(4)` (`PaletteView.swift:567-571`); an
+actual frame stall was not measured.
 
 Suggested fix: stop after the third newline and use a bounded newline scan, caching only if
-profiling warrants it. Rough effort: 1 hour.
+profiling warrants it, and display at most the first few thousand characters of a value with an
+ellipsis; Copy keeps the full value. Rough effort: 1 hour.
 
 ### Detection precedes editor debounce on the main actor
 
@@ -196,8 +274,8 @@ performance problems, stuttering, and jank — nice-to-have
 
 Location: `Sources/ToolchordCore/Tools/LineTools.swift:34-174`. Sorting, deduplication and reversal
 do not consult request cancellation, so obsolete work can keep using background CPU. Session
-revisions correctly prevent stale publication and copy. No material throughput regression was
-measured.
+revisions correctly prevent stale publication and copy. Sort Lines takes about 103 ms at 1 MiB in
+the release benchmark.
 
 Suggested fix: add useful checkpoints around long stages and within traversals where practical;
 measure large-line workloads before changing the sorting algorithm. Rough effort: 2-4 hours.
@@ -277,12 +355,14 @@ Location: `Sources/ToolchordCore/Tools/ColorTools.swift:142-223`;
 `Sources/ToolchordCore/Detection/InputProfile.swift:16`. Neither detection nor conversion accepts
 names such as `red` or `rebeccapurple`, although the color-kind comment claims named-color support.
 Web developers must look up the numeric form themselves. This is an optional feature extension; the
-user-facing conversion contract lists hex, RGB and HSL.
+user-facing conversion contract lists hex, RGB and HSL. Space-separated channels must also be
+separated by spaces: `rgb(255\t0\t0)` is rejected (`ColorTools.swift:269`).
 
 Suggested fix: consider a shared standard name table for detection and conversion, including
 transparent, with contract fixtures and no network dependency. Until then, narrow the capability
-comment to supported syntax. Rough effort: half a day for support; minutes for the comment
-correction.
+comment to supported syntax. Split channels on any CSS whitespace, and fold the three copies of
+the evaluation function (`ColorTools.swift:54-130`) into one. Rough effort: half a day for
+support; minutes for the comment correction.
 
 ### No way to pin favorite tools
 
@@ -328,10 +408,11 @@ Location: `Sources/ToolchordMac/Views/SearchField.swift:73-96`;
 `Sources/ToolchordMac/Panel/PalettePanel.swift:88-116`. When a query has no matches, a "Clear
 search" button appears, but there is no key for it. Escape at the root dismisses the whole palette
 (documented), so a user who wants to keep their attached input and clear only the query must reach
-for the mouse.
+for the mouse. Spotlight and Raycast clear a non-empty query on the first Escape.
 
-Suggested fix: add a shortcut (for example ⌘U or a second Escape when the query is non-empty) that
-clears the query and keeps the draft. Rough effort: about half a day (product decision on the key).
+Suggested fix: add a shortcut (for example ⌘U, or a first Escape that clears a non-empty query and
+a second that closes) that clears the query and keeps the draft. The Escape variant changes the
+documented root-Escape rule. Rough effort: about half a day (product decision on the key).
 
 ### No hover preview
 
@@ -344,18 +425,90 @@ it without changing the selection, which is a common palette interaction.
 Suggested fix: on hover, temporarily show the hovered command's result while keeping the selection;
 revert on mouse-out. Rough effort: about half a day.
 
+### Result fields cannot be copied from the keyboard
+
+missing features — nice-to-have
+
+Location: `Sources/ToolchordMac/Views/PaletteView.swift:555-603`. Field Copy buttons are reachable
+only by tabbing through every row, so copying one JWT claim or URL parameter takes many
+keystrokes in a keyboard-first palette.
+
+Suggested fix: ⌘1-⌘9 copy the first nine copyable fields, with the keycap shown on each row. Rough
+effort: about 2 hours.
+
+### Inspect URL has no raw Query field
+
+missing features — nice-to-have
+
+Location: `Sources/ToolchordCore/Tools/URLTools.swift:161-210`. Fields are Scheme, Host, Path,
+Fragment and the decoded pairs; the contract lists the query among the raw components, and there
+is no way to copy it as written. Confirmed against the built module.
+
+Suggested fix: add an independently copyable raw Query field. Rough effort: 15 minutes.
+
+### Decode Hex rejects common dump formats
+
+missing features — nice-to-have
+
+Location: `Sources/ToolchordCore/Tools/HexTools.swift:53-68`. `0x48 0x65` and `48, 65`, typical of C
+arrays and debugger output, fail with "Invalid hex digit".
+
+Suggested fix: accept per-byte `0x` and `\x` prefixes and commas. Rough effort: about 1 hour.
+
+### Unescape HTML knows only the HTML 4 entities
+
+missing features — nice-to-have
+
+Location: `Sources/ToolchordCore/Tools/HTML/HTMLEntityTable.swift`. `&check;`, `&NewLine;` and the
+other HTML5-only names stay unescaped with an "Unknown entity" warning.
+
+Suggested fix: generate the full HTML5 table (2,231 names) the same way. Rough effort: 1-2 hours.
+
+### No way to bring selected text in without the clipboard
+
+missing features — nice-to-have
+
+Location: no single line; the app has no Services entry and the panel accepts no drops. Text
+selected in another app must be copied first, which overwrites the clipboard.
+
+Suggested fix: an "Open in Toolchord" service for selected text, and text drops on the search area,
+both user-initiated. Rough effort: about half a day.
+
+## Visual issues and layout problems
+
+### Field lists scroll and clip rows although there is room
+
+visual issues and layout problems — nice-to-have
+
+Location: `Sources/ToolchordMac/Views/PaletteView.swift:464-487,526-533`. The height estimate
+counts only line breaks, so a wrapped value (UUID v7's Uppercase field) makes the list scroll
+with free space below it, and in snapshots Decode JWT ("sub") and Convert Unix Time
+("Relative") show half a row at the bottom edge.
+
+Suggested fix: size the list to its content up to a cap (a plain stack first, a scroll view only
+when it does not fit), or snap the cap to whole rows. Rough effort: about 2 hours.
+
+### Convert Unix Time repeats its result as a UTC field
+
+visual issues and layout problems — nice-to-have
+
+Location: `Sources/ToolchordCore/Tools/TimeTools.swift:63-77`. The UTC field duplicates the primary
+result (the contract lists local time, Unix seconds, milliseconds and relative time) and pushes
+Relative out of view in the preview.
+
+Suggested fix: drop the UTC field for Convert Unix Time. Rough effort: 15 minutes.
+
+### The narrow layout shows only three commands
+
+visual issues and layout problems — nice-to-have
+
+Location: `Sources/ToolchordMac/Views/PaletteView.swift:127-134`. Below 640 pt the list is fixed at
+150 pt, about two and a half rows.
+
+Suggested fix: give the list a share of the height (about 40%), or adopt the compact list-only mode
+under missing features. Rough effort: 30 minutes.
+
 ## Usability
-
-### Each result refresh resets the reading position
-
-usability — nice-to-have
-
-Location: `Sources/ToolchordMac/Views/CodeTextView.swift:208-213`. Users editing a long document
-lose their place in the output whenever evaluation succeeds because the result scrolls back to the
-beginning.
-
-Suggested fix: preserve and clamp the scroll position for edits to the same tool/input. Reset
-deliberately for a newly selected tool or attached payload. Rough effort: 2-3 hours.
 
 ### Pending field Copy controls look usable but do nothing
 
@@ -376,10 +529,14 @@ usability — nice-to-have
 Location: `Sources/ToolchordMac/Views/PaletteView.swift:735,956`. The result spinner waits 150 ms
 to avoid flicker, but the status badge immediately shows a spinner and Working text on every
 pending transition. Rapid typing or selection can therefore still produce distracting status
-changes. This is source-established behavior; no frame capture was made.
+changes. Selecting another command also blanks the result area: it starts as
+`.pending(previous: nil)` (`PaletteSession.swift:520-521`), so the pane stays empty until the
+result lands, which shows whenever evaluation outlasts a frame (Markdown at 10 KiB takes about
+11 ms). This is source-established behavior; no frame capture was made.
 
-Suggested fix: share a delayed pending-indicator policy between the badge and result pane, without
-delaying invalidation or copy gating. Rough effort: 1-2 hours.
+Suggested fix: share a delayed pending-indicator policy between the badge and result pane, keeping
+the previous output dimmed during the delay, without delaying invalidation or copy gating. Rough
+effort: 1-2 hours.
 
 ### Opening Settings discards the palette draft
 
@@ -396,6 +553,59 @@ switch or when Settings closes.
 Suggested fix: if preserving the draft is desired, add a dismiss reason that keeps the session, and
 end the session when Settings closes or the user activates another app. Otherwise document the
 intentional clear. Rough effort: about half a day (with the extra lifetime rules).
+
+### Line tools are suggested for JSON and one-line text with a trailing newline
+
+usability — nice-to-have
+
+Location: `Sources/ToolchordCore/Tools/LineTools.swift:28,80`;
+`Sources/ToolchordCore/Detection/InputDetector.swift:41,384-399`. Pasted multiline JSON lists Sort
+Lines and Remove Duplicate Lines under "Suggested for JSON", against the contract's rule that
+general text tools suggest themselves only for plain text; and `token\n` counts as two lines, so
+a one-line paste gets line tools and loses the URL-encode suggestion.
+
+Suggested fix: require `isPlainText` for the line tools, and do not count one final line break as an
+extra line in detection. Rough effort: 30 minutes.
+
+### The global shortcut never closes the palette
+
+usability — nice-to-have
+
+Location: `Sources/ToolchordMac/Panel/PanelController.swift:50-55`. Pressing the shortcut again
+refocuses the open panel (documented), while launcher muscle memory expects it to toggle.
+
+Suggested fix: when the panel is already key, the shortcut dismisses it; when it is visible but not
+key, it focuses it. This changes a documented rule. Rough effort: 30 minutes.
+
+### Date-only and offset-less dates are rejected
+
+usability — nice-to-have
+
+Location: `Sources/ToolchordCore/Tools/Time/TimeParser.swift:142,171-173`. `2024-01-01` and
+`2024-01-01 12:00:00` are detected as dates and Convert Date to Unix Time is suggested, but both
+fail.
+
+Suggested fix: an Assume option (UTC or local) used only when the time or offset is missing, stated
+in the status. Rough effort: about 2 hours.
+
+### Hashes and encoders silently include a copied line break
+
+usability — nice-to-have
+
+Location: `Sources/ToolchordCore/Tools/HashTools.swift:69-83` (also the Base64, URL and hex
+encoders). `password\n` hashes 9 bytes, so the `echo` versus `echo -n` mistake goes unnoticed.
+
+Suggested fix: a warning such as "Includes the line break at the end". Rough effort: about 1 hour.
+
+### Closing Settings or the welcome window leaves Toolchord active
+
+usability — nice-to-have
+
+Location: `Sources/ToolchordMac/App/ToolchordApplication.swift:181-192`. After the window closes,
+no app window has focus until the user clicks somewhere.
+
+Suggested fix: when the last Toolchord window closes, hide the app so the previous app regains
+focus. Rough effort: 30 minutes.
 
 ## Aesthetics and theming
 
@@ -433,6 +643,28 @@ font, have no control. This is an optional customization, not a defect.
 Suggested fix: offer light/dark/auto and a small set of code-font sizes, persist only the
 preference, and validate minimum useful editor space. Rough effort: half a day.
 
+### Three tool families share the same "#" icon
+
+aesthetics and theming — nice-to-have
+
+Location: `Sources/ToolchordCore/Tools/UUIDTools.swift:14,27,47`; `HashTools.swift:62`;
+`NumberTools.swift:86`. Under "Suggested for Number" every row shows "#", as do the UUID and
+hash rows, which makes the list harder to scan.
+
+Suggested fix: distinct glyphs, for example "ID" for identifiers, a fingerprint symbol for hashes
+and "0b" for bases. Rough effort: 30 minutes.
+
+### The menu bar item fakes shortcut alignment and uses a stock symbol
+
+aesthetics and theming — nice-to-have
+
+Location: `Sources/ToolchordMac/App/ToolchordApplication.swift:89,98`. "Open Toolchord   ⌥⇧Space"
+pads with spaces instead of using the native key-equivalent column, and the generic
+`command.square` symbol is easy to confuse with other menu bar items.
+
+Suggested fix: show the shortcut through the item's key equivalent (display only) and use a template
+glyph derived from the app icon. Rough effort: about 1 hour.
+
 ## Novel, delightful, or quirky ideas worth trying
 
 ### Use the current result as the next tool's input
@@ -448,8 +680,9 @@ Suggested fix: add an explicit session-local "Use result as input" action that a
 primary output and returns to search, preserving revision/copy gating and requiring no saved
 history. For reversible commands, declare the reverse command ID and add "Swap Input and Result".
 Preserve a clear way back to the original draft if a chain is introduced; draft ownership and undo
-behavior need an explicit design before implementation. Rough effort: half a day for a prototype;
-1-2 days with reversible draft handling.
+behavior need an explicit design before implementation. A breadcrumb in the attachment row (for
+example "Decoded Base64 →") would show where the input came from. Rough effort: half a day for a
+prototype; 1-2 days with reversible draft handling.
 
 ### Optional examples could teach unfamiliar tools
 
@@ -496,3 +729,23 @@ example "pretty print", "epoch") teaches search vocabulary and makes search feel
 
 Suggested fix: show the first alias as secondary text on the selected row or in the preview header.
 Rough effort: about an hour.
+
+### Reveal invisible characters in the input editor
+
+novel, delightful, or quirky ideas worth trying — nice-to-have
+
+Location: `Sources/ToolchordMac/Views/CodeTextView.swift:80-123`. Make Plain Text removes
+characters the user cannot see, so its input gives no clue what will change.
+
+Suggested fix: draw markers for non-breaking spaces, zero-width characters and directional controls
+in the editor (always for Make Plain Text, as a toggle elsewhere). Rough effort: about 2 hours.
+
+### Hint that the clipboard holds text without reading it
+
+novel, delightful, or quirky ideas worth trying — nice-to-have
+
+Location: `Sources/ToolchordMac/Views/PaletteView.swift:60-83`. The first step is nearly always
+⌘V, but the panel cannot say whether it will work.
+
+Suggested fix: on open, check the pasteboard's types (no read, no privacy prompt) and emphasize the
+⌘V keycap with "Clipboard has text". Rough effort: about 1 hour.

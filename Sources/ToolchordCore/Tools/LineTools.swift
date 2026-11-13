@@ -91,7 +91,9 @@ public enum LineTools {
         let caseSensitive = request.options.flag("caseSensitive", default: true)
         let trim = request.options.flag("trim", default: false)
 
-        var seen: Set<String> = []
+        // Compare bytes after the requested transformations. String equality
+        // would also merge canonically equivalent but byte-distinct lines.
+        var seen: Set<[UInt8]> = []
         var kept: [String] = []
 
         for line in lines {
@@ -104,8 +106,7 @@ public enum LineTools {
             if !caseSensitive {
                 key = key.lowercased()
             }
-            if !seen.contains(key) {
-                seen.insert(key)
+            if seen.insert(Array(key.utf8)).inserted {
                 kept.append(line)
             }
         }
