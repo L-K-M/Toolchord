@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import ToolchordCore
+import ToolchordSession
 
 /// Remembers the AppKit views that the controller moves focus between.
 @MainActor
@@ -36,6 +37,29 @@ final class PaletteFocus {
 /// Escape goes back (after any IME composition), and Tab moves focus;
 /// Option-Tab inserts a tab character.
 final class CodeTextView: NSTextView {
+    /// How Copy writes the selection. A selection of a secret result, such as
+    /// a generated random string, is written like the palette's own Copy of
+    /// it: kept on this Mac and marked confidential for clipboard history
+    /// apps, not as the plain text NSTextView would write.
+    var copySensitivity: ClipboardSensitivity = .normal
+    /// Receives secret copies; nil means the system clipboard. Tests pass a
+    /// private one.
+    var secretClipboard: ClipboardWriting?
+
+    override func copy(_ sender: Any?) {
+        guard copySensitivity == .secret else {
+            super.copy(sender)
+            return
+        }
+        let selection = selectedRanges
+            .map { (string as NSString).substring(with: $0.rangeValue) }
+            .joined(separator: "\n")
+        guard !selection.isEmpty else { return }
+        if !(secretClipboard ?? SystemClipboard()).writeText(selection, sensitivity: .secret) {
+            NSSound.beep()
+        }
+    }
+
     override func cancelOperation(_ sender: Any?) {
         if hasMarkedText() {
             super.cancelOperation(sender)
@@ -187,6 +211,8 @@ struct ResultTextView: NSViewRepresentable {
     /// What the result belongs to, such as the command ID. New text with the
     /// same identity comes from an edit, so the reader keeps their place.
     let identity: String
+    /// How Copy writes a selection of the result.
+    let sensitivity: ClipboardSensitivity
     let dimmed: Bool
     let accessibilityLabel: String
     var focus: PaletteFocus?
@@ -210,6 +236,7 @@ struct ResultTextView: NSViewRepresentable {
 
     private func apply(to textView: CodeTextView, coordinator: Coordinator) {
         coordinator.show(text, syntax: syntax, identity: identity, in: textView)
+        textView.copySensitivity = sensitivity
         textView.alphaValue = dimmed ? 0.45 : 1
     }
 
