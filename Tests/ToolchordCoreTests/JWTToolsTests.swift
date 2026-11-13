@@ -170,6 +170,23 @@ import Testing
         #expect(cmd.affinity(InputProfile(isAttached: true, kinds: [.jwt], primaryKind: .jwt, byteCount: 1, lineCount: 1, isBlank: false)) == 100)
         #expect(cmd.affinity(.none) == 0)
     }
+
+    @Test func whitespaceBesideADotIsRejected() throws {
+        // Only the Base64 commands skip whitespace around their input. In a
+        // compact JWT, whitespace beside a dot belongs to no segment.
+        let fixtures = [
+            ("eyJhbGciOiJub25lIn0. eyJleHAiOjAsInN1YiI6IngifQ.", 21),
+            ("eyJhbGciOiJub25lIn0 .eyJleHAiOjAsInN1YiI6IngifQ.", 20),
+        ]
+        for (input, column) in fixtures {
+            guard case .invalid(let diagnostic) = try run(input) else {
+                Issue.record("Decoded \(input)")
+                continue
+            }
+            #expect(diagnostic.message.contains("whitespace"), "\(diagnostic)")
+            #expect(diagnostic.location == TextLocation(line: 1, column: column), "\(diagnostic)")
+        }
+    }
 }
 
 @Suite struct JWTNumericDateRobustnessTests {
