@@ -538,6 +538,7 @@ private struct SuccessView: View {
             text: output.primaryText,
             syntax: output.syntax,
             identity: command.id,
+            sensitivity: output.sensitivity,
             dimmed: dimmed,
             accessibilityLabel: "Result of \(command.title)",
             focus: focus
