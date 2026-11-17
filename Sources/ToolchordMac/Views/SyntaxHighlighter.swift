@@ -8,28 +8,48 @@ import ToolchordCore
 enum SyntaxHighlighter {
     static let maxHighlightedLength = 256 * 1024
 
-    static func attributedString(for text: String, syntax: SyntaxKind) -> NSAttributedString {
+    static func attributedString(for text: String, syntax: SyntaxKind, style: PaletteStyle = .standard) -> NSAttributedString {
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineHeightMultiple = Theme.codeLineHeight
         let base: [NSAttributedString.Key: Any] = [
-            .font: Theme.codeFont,
-            .foregroundColor: NSColor.labelColor,
+            .font: style.codeFont,
+            .foregroundColor: style.nsColor(.code),
             .paragraphStyle: paragraph,
         ]
         let result = NSMutableAttributedString(string: text, attributes: base)
         guard text.utf16.count <= maxHighlightedLength else { return result }
         let units = Array(text.utf16)
+        let colors = TokenColors(style: style)
         switch syntax {
         case .plain: break
-        case .json: highlightJSON(units, into: result)
-        case .xml: highlightXML(units, into: result)
+        case .json: highlightJSON(units, colors: colors, into: result)
+        case .xml: highlightXML(units, colors: colors, into: result)
         }
         return result
     }
 
+    /// One highlight's token colors, made once rather than per token.
+    private struct TokenColors {
+        let key: NSColor
+        let string: NSColor
+        let number: NSColor
+        let literal: NSColor
+        let punctuation: NSColor
+        let comment: NSColor
+
+        init(style: PaletteStyle) {
+            key = style.nsColor(.keys)
+            string = style.nsColor(.strings)
+            number = style.nsColor(.numbers)
+            literal = style.nsColor(.literals)
+            punctuation = style.nsColor(.punctuation)
+            comment = style.nsColor(.comments)
+        }
+    }
+
     // MARK: - JSON
 
-    private static func highlightJSON(_ units: [UInt16], into result: NSMutableAttributedString) {
+    private static func highlightJSON(_ units: [UInt16], colors: TokenColors, into result: NSMutableAttributedString) {
         var index = 0
         func color(_ range: Range<Int>, _ color: NSColor) {
             result.addAttribute(.foregroundColor, value: color, range: NSRange(location: range.lowerBound, length: range.count))
@@ -47,17 +67,17 @@ enum SyntaxHighlighter {
                 var lookahead = index
                 while lookahead < units.count, [0x20, 0x09, 0x0A, 0x0D].contains(units[lookahead]) { lookahead += 1 }
                 let isKey = lookahead < units.count && units[lookahead] == 0x3A
-                color(start..<index, isKey ? Theme.syntaxKey : Theme.syntaxString)
+                color(start..<index, isKey ? colors.key : colors.string)
             case 0x2D, 0x30...0x39: // - or digit
                 let start = index
                 while index < units.count, isNumberUnit(units[index]) { index += 1 }
-                color(start..<index, Theme.syntaxNumber)
+                color(start..<index, colors.number)
             case 0x74, 0x66, 0x6E: // t f n
                 let start = index
                 while index < units.count, (0x61...0x7A).contains(units[index]) { index += 1 }
-                color(start..<index, Theme.syntaxLiteral)
+                color(start..<index, colors.literal)
             case 0x7B, 0x7D, 0x5B, 0x5D, 0x3A, 0x2C:
-                color(index..<(index + 1), Theme.syntaxPunctuation)
+                color(index..<(index + 1), colors.punctuation)
                 index += 1
             default:
                 index += 1
@@ -71,7 +91,7 @@ enum SyntaxHighlighter {
 
     // MARK: - XML
 
-    private static func highlightXML(_ units: [UInt16], into result: NSMutableAttributedString) {
+    private static func highlightXML(_ units: [UInt16], colors: TokenColors, into result: NSMutableAttributedString) {
         func color(_ range: Range<Int>, _ color: NSColor) {
             guard !range.isEmpty else { return }
             result.addAttribute(.foregroundColor, value: color, range: NSRange(location: range.lowerBound, length: range.count))
@@ -101,25 +121,25 @@ enum SyntaxHighlighter {
             }
             if starts("<!--", at: index) {
                 let end = find("-->", from: index + 4)
-                color(index..<end, Theme.syntaxComment)
+                color(index..<end, colors.comment)
                 index = end
             } else if starts("<![CDATA[", at: index) {
                 let end = find("]]>", from: index + 9)
-                color(index..<end, Theme.syntaxLiteral)
+                color(index..<end, colors.literal)
                 index = end
             } else if starts("<?", at: index) || starts("<!", at: index) {
                 let end = find(">", from: index + 2)
-                color(index..<end, Theme.syntaxLiteral)
+                color(index..<end, colors.literal)
                 index = end
             } else {
                 // Tag: punctuation, name, then attributes.
                 let start = index
                 index += 1
                 if index < units.count, units[index] == 0x2F { index += 1 }
-                color(start..<index, Theme.syntaxPunctuation)
+                color(start..<index, colors.punctuation)
                 let nameStart = index
                 while index < units.count, !isXMLBreak(units[index]) { index += 1 }
-                color(nameStart..<index, Theme.syntaxKey)
+                color(nameStart..<index, colors.key)
                 while index < units.count, units[index] != 0x3E {
                     let unit = units[index]
                     if unit == 0x22 || unit == 0x27 {
@@ -128,18 +148,18 @@ enum SyntaxHighlighter {
                         index += 1
                         while index < units.count, units[index] != quote { index += 1 }
                         index = min(index + 1, units.count)
-                        color(valueStart..<index, Theme.syntaxString)
+                        color(valueStart..<index, colors.string)
                     } else if !isXMLBreak(unit) {
                         let attributeStart = index
                         while index < units.count, !isXMLBreak(units[index]) { index += 1 }
-                        color(attributeStart..<index, Theme.syntaxNumber)
+                        color(attributeStart..<index, colors.number)
                     } else {
-                        if unit == 0x2F || unit == 0x3D { color(index..<(index + 1), Theme.syntaxPunctuation) }
+                        if unit == 0x2F || unit == 0x3D { color(index..<(index + 1), colors.punctuation) }
                         index += 1
                     }
                 }
                 if index < units.count {
-                    color(index..<(index + 1), Theme.syntaxPunctuation)
+                    color(index..<(index + 1), colors.punctuation)
                     index += 1
                 }
             }

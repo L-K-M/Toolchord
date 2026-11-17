@@ -2,20 +2,93 @@ import AppKit
 import SwiftUI
 import ToolchordCore
 import ToolchordSession
+import ToolchordTheme
 
 /// Renders palette states to PNG for design review and documentation.
 ///
 /// Window materials (glass and vibrancy) are composited by the window server
 /// and do not appear in offscreen captures, so snapshots draw an opaque
-/// stand-in background of similar tone.
+/// stand-in of similar tone: `ThemeReference.glass`, which the contrast
+/// audit measures against too. A theme's surface is drawn over it.
 @MainActor
 public enum SnapshotRenderer {
     public struct Scenario: Sendable {
         public let name: String
+        /// The appearance for the standard theme; a pinned theme uses its own.
         public let appearance: NSAppearance.Name
+        /// The panel width at the standard text size.
         public let width: CGFloat
+        let theme: PaletteTheme
+        let textSizes: ThemeTextSizes
+        /// Draws as with Increase Contrast, which turns on Reduce Transparency.
+        let increaseContrast: Bool
         let setUp: @MainActor @Sendable (PaletteSession) async -> Void
+
+        init(
+            name: String,
+            appearance: NSAppearance.Name,
+            width: CGFloat,
+            theme: PaletteTheme = .standard,
+            textSizes: ThemeTextSizes = .standard,
+            increaseContrast: Bool = false,
+            setUp: @escaping @MainActor @Sendable (PaletteSession) async -> Void
+        ) {
+            self.name = name
+            self.appearance = appearance
+            self.width = width
+            self.theme = theme
+            self.textSizes = textSizes
+            self.increaseContrast = increaseContrast
+            self.setUp = setUp
+        }
     }
+
+    private static let sampleJSON = #"{"requestId":"req_81f2","status":200,"cache":"HIT","items":[1,2.50,-0],"ok":true}"#
+
+    /// One search-mode snapshot per preset, in its own appearance.
+    private static let presetScenarios: [Scenario] = ThemePresets.all.dropFirst().map { preset in
+        Scenario(name: "theme-\(preset.id)", appearance: .aqua, width: Theme.panelWidth, theme: preset.theme) { session in
+            session.attach(sampleJSON)
+        }
+    }
+
+    /// Text sizes, a tool in a preset with its own code font, the status
+    /// colors, and the accessibility treatments.
+    private static let themeEdgeScenarios: [Scenario] = [
+        Scenario(name: "theme-default-extra-large-text", appearance: .darkAqua, width: Theme.panelWidth,
+                 textSizes: ThemeTextSizes(codeFontSize: 16, interface: .extraLarge)) { session in
+            session.attach(sampleJSON)
+        },
+        Scenario(name: "theme-default-small-text", appearance: .aqua, width: Theme.panelWidth,
+                 textSizes: ThemeTextSizes(codeFontSize: 10, interface: .small)) { session in
+            session.attach(sampleJSON)
+        },
+        Scenario(name: "theme-phosphor-tool", appearance: .aqua, width: Theme.panelWidth, theme: ThemePresets.phosphor.theme) { session in
+            session.attach(#"<feed><!-- note --><entry id="42">Release</entry></feed>"#)
+            session.openSelected()
+        },
+        Scenario(name: "theme-memphis-jwt-warnings", appearance: .aqua, width: Theme.panelWidth, theme: ThemePresets.memphis.theme) { session in
+            session.setQuery("jwt")
+            session.attach("Bearer eyJhbGciOiJub25lIn0.eyJleHAiOjAsIm5iZiI6NDEwMjQ0NDgwMH0.")
+        },
+        Scenario(name: "theme-lemonade-invalid", appearance: .aqua, width: Theme.panelWidth, theme: ThemePresets.lemonade.theme) { session in
+            session.attach("{\n  \"status\": 200,\n  \"cache\": HIT\n}")
+        },
+        Scenario(name: "theme-default-increased-contrast", appearance: .aqua, width: Theme.panelWidth, increaseContrast: true) { session in
+            session.attach(sampleJSON)
+        },
+        Scenario(name: "theme-synthwave-increased-contrast", appearance: .aqua, width: Theme.panelWidth,
+                 theme: ThemePresets.synthwave.theme, increaseContrast: true) { session in
+            session.attach(sampleJSON)
+        },
+        Scenario(name: "theme-frost-increased-contrast", appearance: .aqua, width: Theme.panelWidth,
+                 theme: ThemePresets.frost.theme, increaseContrast: true) { session in
+            session.attach(sampleJSON)
+        },
+        Scenario(name: "search-color-translucent", appearance: .darkAqua, width: Theme.panelWidth) { session in
+            session.attach("#ff880080")
+        },
+    ]
 
     public static let scenarios: [Scenario] = [
         Scenario(name: "search-empty", appearance: .aqua, width: Theme.panelWidth) { _ in },
@@ -99,7 +172,13 @@ public enum SnapshotRenderer {
         Scenario(name: "search-plaintext", appearance: .darkAqua, width: Theme.panelWidth) { session in
             session.attach("curl\u{00A0}\u{2014}silent \u{201C}https://example.test/api?q=1\u{201D}\u{200B}")
         },
+    ] + presetScenarios + themeEdgeScenarios
 
+    /// The Settings ▸ Appearance tab in a theme, for reviewing the editor's
+    /// layout. The preview's glass doesn't show in offscreen captures.
+    private static let settingsScenarios: [(name: String, theme: PaletteTheme, appearance: NSAppearance.Name)] = [
+        ("settings-appearance-default", .standard, .aqua),
+        ("settings-appearance-synthwave", ThemePresets.synthwave.theme, .darkAqua),
     ]
 
     /// Writes one PNG per scenario into `directory` and returns their URLs.
@@ -111,26 +190,72 @@ public enum SnapshotRenderer {
             try await render(scenario, to: url)
             urls.append(url)
         }
+        for scenario in settingsScenarios where names.isEmpty || names.contains(scenario.name) {
+            let url = directory.appendingPathComponent("\(scenario.name).png")
+            try await renderAppearanceSettings(theme: scenario.theme, appearance: scenario.appearance, to: url)
+            urls.append(url)
+        }
         return urls
     }
 
+    static func renderAppearanceSettings(theme: PaletteTheme, appearance: NSAppearance.Name, to url: URL) async throws {
+        // Throwaway preferences and a private pasteboard: rendering must not
+        // touch the person's settings or clipboard.
+        let suite = "ch.lkmc.Toolchord.snapshots.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suite) else { throw CocoaError(.fileWriteUnknown) }
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let preferences = AppPreferences(defaults: defaults)
+        preferences.setTheme(theme)
+        let clipboard = SystemClipboard(pasteboard: NSPasteboard(name: NSPasteboard.Name("ch.lkmc.Toolchord.snapshots")))
+        let hosting = NSHostingView(rootView: AppearanceSettingsView(preferences: preferences, clipboard: clipboard))
+        hosting.frame = NSRect(origin: .zero, size: hosting.fittingSize)
+
+        let window = NSWindow(contentRect: hosting.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.appearance = NSAppearance(named: appearance)
+        window.backgroundColor = .windowBackgroundColor
+        window.contentView = hosting
+        // Let the preview's demo session evaluate and SwiftUI settle.
+        for _ in 0..<12 {
+            hosting.layoutSubtreeIfNeeded()
+            try await Task.sleep(for: .milliseconds(80))
+        }
+        guard let bitmap = hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds) else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+        hosting.cacheDisplay(in: hosting.bounds, to: bitmap)
+        guard let data = bitmap.representation(using: .png, properties: [:]) else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+        try data.write(to: url)
+        window.close()
+    }
+
     static func render(_ scenario: Scenario, to url: URL) async throws {
-        let preferences = MemoryPreferences(overrides: [:], recentCommandIDs: [])
-        let clock: @Sendable () -> Date = { Date(timeIntervalSince1970: 1_700_000_000) }
-        let session = PaletteSession(
-            clipboard: MemoryClipboard(),
-            preferences: preferences,
-            clock: clock,
-            timeZone: { TimeZone(identifier: "Europe/Zurich")! }
-        )
-        session.activate()
+        let session = PaletteSession.demo()
         await scenario.setUp(session)
         await session.waitForIdle()
 
-        let height = session.isInTool ? Theme.toolHeight : Theme.searchHeight
-        let size = NSSize(width: scenario.width, height: height)
+        let style = PaletteStyle(
+            theme: scenario.theme,
+            textSizes: scenario.textSizes,
+            increaseContrast: scenario.increaseContrast,
+            reduceTransparency: scenario.increaseContrast
+        )
+        let appearanceName = style.appearanceName ?? scenario.appearance
+        let tone: ThemeTone = scenario.theme.appearance.pinnedTone ?? (scenario.appearance == .darkAqua ? .dark : .light)
+        let width = style.scaled(scenario.width)
+        let height = session.isInTool ? style.toolHeight : style.searchHeight
+        let size = NSSize(width: width, height: height)
         let focus = PaletteFocus()
-        let view = PaletteView(session: session, actions: NoActions(), focus: focus, isNarrow: scenario.width < Theme.narrowWidth)
+        let view = PaletteView(
+            session: session,
+            actions: InertPaletteActions(),
+            focus: focus,
+            isNarrow: style.isNarrow(width: width),
+            listWidth: style.listWidth(forPanelWidth: width),
+            style: style
+        )
         let hosting = NSHostingView(rootView: view)
         hosting.frame = NSRect(origin: .zero, size: size)
 
@@ -140,10 +265,10 @@ public enum SnapshotRenderer {
 
         let window = NSWindow(contentRect: hosting.frame, styleMask: [.borderless], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
-        window.appearance = NSAppearance(named: scenario.appearance)
+        window.appearance = NSAppearance(named: appearanceName)
         window.contentView = background
-        background.layer?.backgroundColor = standInBackground(for: scenario.appearance).cgColor
-        background.layer?.cornerRadius = Theme.cornerRadius
+        background.layer?.backgroundColor = NSColor(theme: ThemeReference.glass(tone)).cgColor
+        background.layer?.cornerRadius = style.cornerRadius
         window.layoutIfNeeded()
         // Let SwiftUI settle layout and lazy content.
         for _ in 0..<5 {
@@ -160,26 +285,5 @@ public enum SnapshotRenderer {
         }
         try data.write(to: url)
         window.close()
-    }
-
-    private static func standInBackground(for appearance: NSAppearance.Name) -> NSColor {
-        appearance == .darkAqua
-            ? NSColor(srgbRed: 0.16, green: 0.16, blue: 0.18, alpha: 1)
-            : NSColor(srgbRed: 0.95, green: 0.95, blue: 0.96, alpha: 1)
-    }
-
-    @MainActor
-    private final class NoActions: PaletteActions {
-        func openSelected() {}
-        func back() {}
-        func escape() {}
-        func copyAndClose() {}
-        func copyWithoutClosing() {}
-        func copyField(_ id: String) {}
-        func pasteFromClipboard() {}
-        func showActions(from anchor: NSView?) {}
-        func regenerate() {}
-        func clearInput() {}
-        func openSettings() {}
     }
 }

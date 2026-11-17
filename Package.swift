@@ -8,6 +8,8 @@ import PackageDescription
 //   Foundation and CryptoKit only.
 // - ToolchordSession: the palette's in-memory draft, evaluation scheduling,
 //   and copy gating. No AppKit.
+// - ToolchordTheme: the theme model, presets, the stored JSON format, and
+//   contrast rules. Foundation only, so presets are audited without AppKit.
 // - ToolchordMac: the panel, global shortcut, pasteboard, settings, and views.
 // - ToolchordSnapshots: renders palette states to PNG for design review.
 //
@@ -19,16 +21,19 @@ let package = Package(
     products: [
         .library(name: "ToolchordCore", targets: ["ToolchordCore"]),
         .library(name: "ToolchordSession", targets: ["ToolchordSession"]),
+        .library(name: "ToolchordTheme", targets: ["ToolchordTheme"]),
         .library(name: "ToolchordMac", targets: ["ToolchordMac"]),
         .executable(name: "toolchord-snapshots", targets: ["ToolchordSnapshots"]),
     ],
     targets: [
         .target(name: "ToolchordCore"),
         .target(name: "ToolchordSession", dependencies: ["ToolchordCore"]),
-        .target(name: "ToolchordMac", dependencies: ["ToolchordCore", "ToolchordSession"]),
+        .target(name: "ToolchordTheme"),
+        .target(name: "ToolchordMac", dependencies: ["ToolchordCore", "ToolchordSession", "ToolchordTheme"]),
         .executableTarget(name: "ToolchordSnapshots", dependencies: ["ToolchordMac"]),
         .testTarget(name: "ToolchordCoreTests", dependencies: ["ToolchordCore"]),
         .testTarget(name: "ToolchordSessionTests", dependencies: ["ToolchordSession"]),
+        .testTarget(name: "ToolchordThemeTests", dependencies: ["ToolchordTheme"]),
         .testTarget(name: "ToolchordMacTests", dependencies: ["ToolchordMac"]),
     ]
 )

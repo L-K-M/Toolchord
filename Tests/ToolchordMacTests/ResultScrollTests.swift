@@ -118,7 +118,7 @@ struct ResultScrollTests {
     }
 
     @Test func aNewIdentityStartsAtTheTopEvenWithTheSameText() async throws {
-        let (scrollView, textView) = CodeTextView.makeScrollable(editable: false)
+        let (scrollView, textView) = CodeTextView.makeScrollable(.result, style: .standard)
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 300), styleMask: [.borderless], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.contentView = scrollView
@@ -126,16 +126,16 @@ struct ResultScrollTests {
         let coordinator = ResultTextView.Coordinator()
         let text = (1...400).map { "line \($0)" }.joined(separator: "\n")
 
-        coordinator.show(text, syntax: .plain, identity: "json.minify", in: textView)
+        coordinator.show(text, syntax: .plain, style: .standard, identity: "json.minify", in: textView)
         try await settle(window)
         textView.scroll(NSPoint(x: 0, y: 900))
         try await settle(window)
         let position = textView.visibleRect.minY
         #expect(position > 0)
 
-        coordinator.show(text, syntax: .plain, identity: "json.minify", in: textView)
+        coordinator.show(text, syntax: .plain, style: .standard, identity: "json.minify", in: textView)
         #expect(textView.visibleRect.minY == position)
-        coordinator.show(text, syntax: .plain, identity: "json.validate", in: textView)
+        coordinator.show(text, syntax: .plain, style: .standard, identity: "json.validate", in: textView)
         #expect(textView.visibleRect.minY == 0)
     }
 }

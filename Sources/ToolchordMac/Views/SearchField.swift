@@ -23,16 +23,13 @@ struct SearchField: NSViewRepresentable {
         field.isBordered = false
         field.drawsBackground = false
         field.focusRingType = .none
-        field.font = Theme.searchFont
-        field.textColor = .labelColor
         field.lineBreakMode = .byTruncatingTail
         field.usesSingleLineMode = true
         field.cell?.isScrollable = true
         field.cell?.wraps = false
-        field.placeholderAttributedString = NSAttributedString(
-            string: "Find a tool or paste input…",
-            attributes: [.font: Theme.searchFont, .foregroundColor: NSColor.placeholderTextColor]
-        )
+        // The theme preview in Settings must not take keyboard focus.
+        field.refusesFirstResponder = context.environment.isPalettePreview
+        context.coordinator.apply(context.environment.paletteStyle, to: field)
         field.setAccessibilityLabel("Find a tool or paste input")
         field.setAccessibilityHelp("Type to search tools. Press Command-V to attach the clipboard as input.")
         field.delegate = context.coordinator
@@ -44,6 +41,7 @@ struct SearchField: NSViewRepresentable {
     func updateNSView(_ field: SearchTextField, context: Context) {
         context.coordinator.onOpen = onOpen
         context.coordinator.onEscape = onEscape
+        context.coordinator.apply(context.environment.paletteStyle, to: field)
         focus.searchField = field
         if !field.stringValue.hasSameUTF8(as: session.query) {
             field.stringValue = session.query
@@ -59,10 +57,24 @@ struct SearchField: NSViewRepresentable {
         var onOpen: () -> Void
         var onEscape: () -> Void
 
+        private var appliedStyle: PaletteStyle?
+
         init(session: PaletteSession, onOpen: @escaping () -> Void, onEscape: @escaping () -> Void) {
             self.session = session
             self.onOpen = onOpen
             self.onEscape = onEscape
+        }
+
+        /// Sets the field's font and colors for `style`, once per change.
+        func apply(_ style: PaletteStyle, to field: NSTextField) {
+            guard appliedStyle != style else { return }
+            appliedStyle = style
+            field.font = style.searchFont
+            field.textColor = style.nsColor(.text)
+            field.placeholderAttributedString = NSAttributedString(
+                string: "Find a tool or paste input…",
+                attributes: [.font: style.searchFont, .foregroundColor: style.placeholder]
+            )
         }
 
         func controlTextDidChange(_ notification: Notification) {

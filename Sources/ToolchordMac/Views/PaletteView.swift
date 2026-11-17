@@ -26,6 +26,9 @@ struct PaletteView: View {
     let actions: PaletteActions
     let focus: PaletteFocus
     var isNarrow = false
+    /// The command list's width beside the preview.
+    var listWidth: CGFloat = Theme.listWidth
+    var style: PaletteStyle = .standard
 
     var body: some View {
         VStack(spacing: 0) {
@@ -40,15 +43,24 @@ struct PaletteView: View {
                     AttachmentBar(payload: payload, onClear: actions.clearInput)
                 }
                 Divider()
-                SearchBody(session: session, actions: actions, isNarrow: isNarrow)
+                SearchBody(session: session, actions: actions, isNarrow: isNarrow, listWidth: listWidth)
             }
             Divider()
             FooterBar(session: session, actions: actions)
         }
         .overlay(alignment: .bottom) {
             NoticeView(session: session)
-                .padding(.bottom, 58)
+                .padding(.bottom, style.scaled(58))
         }
+        // The theme's surface over the system glass; none for glass alone.
+        .background {
+            if let fill = style.surfaceFill {
+                RoundedRectangle(cornerRadius: style.cornerRadius, style: .continuous).fill(fill)
+            }
+        }
+        .themedForeground(style)
+        .tint(style.tint)
+        .environment(\.paletteStyle, style)
         .onChange(of: session.preview) { _, preview in
             Announcer.announce(preview: preview, session: session)
         }
@@ -58,6 +70,7 @@ struct PaletteView: View {
 // MARK: - Search mode
 
 private struct SearchHeader: View {
+    @Environment(\.paletteStyle) private var style
     let session: PaletteSession
     let actions: PaletteActions
     let focus: PaletteFocus
@@ -65,11 +78,11 @@ private struct SearchHeader: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 18, weight: .regular))
-                .foregroundStyle(.secondary)
+                .font(style.font(18, weight: .regular))
+                .foregroundStyle(style.secondary)
                 .accessibilityHidden(true)
             SearchField(session: session, focus: focus, onOpen: actions.openSelected, onEscape: actions.escape)
-                .frame(height: 28)
+                .frame(height: style.scaled(28))
             Button(action: actions.pasteFromClipboard) {
                 Keycap("⌘V")
             }
@@ -78,36 +91,37 @@ private struct SearchHeader: View {
             .accessibilityLabel("Paste clipboard as input")
         }
         .padding(.horizontal, 18)
-        .frame(height: 58)
+        .frame(height: style.scaled(58))
     }
 }
 
 private struct AttachmentBar: View {
+    @Environment(\.paletteStyle) private var style
     let payload: Payload
     let onClear: () -> Void
 
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: payload.source == .pasted ? "doc.on.clipboard" : "pencil")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(style.secondary)
                 .accessibilityHidden(true)
             // Metadata only: the pasted text itself may be a secret (for
             // example a token being hashed), so it appears only in the editor.
             Text(label)
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
+                .font(style.font(12))
+                .foregroundStyle(style.secondary)
                 .fixedSize()
             Spacer(minLength: 0)
             Button(action: onClear) {
                 Image(systemName: "xmark.circle.fill")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(style.secondary)
             }
             .buttonStyle(.plain)
             .help("Clear input (⇧⌘⌫)")
             .accessibilityLabel("Clear input")
         }
         .padding(.horizontal, 18)
-        .frame(height: 38)
+        .frame(height: style.scaled(38))
         .accessibilityElement(children: .contain)
         .accessibilityLabel(label)
     }
@@ -119,15 +133,17 @@ private struct AttachmentBar: View {
 }
 
 private struct SearchBody: View {
+    @Environment(\.paletteStyle) private var style
     let session: PaletteSession
     let actions: PaletteActions
     let isNarrow: Bool
+    let listWidth: CGFloat
 
     var body: some View {
         if isNarrow {
             VStack(spacing: 0) {
                 CommandList(session: session, actions: actions)
-                    .frame(height: 150)
+                    .frame(height: style.scaled(150))
                 Divider()
                 PreviewPane(session: session, actions: actions)
                     .frame(maxHeight: .infinity)
@@ -135,7 +151,7 @@ private struct SearchBody: View {
         } else {
             HStack(spacing: 0) {
                 CommandList(session: session, actions: actions)
-                    .frame(width: Theme.listWidth)
+                    .frame(width: listWidth)
                 Divider()
                 PreviewPane(session: session, actions: actions)
             }
@@ -144,6 +160,7 @@ private struct SearchBody: View {
 }
 
 private struct CommandList: View {
+    @Environment(\.paletteStyle) private var style
     let session: PaletteSession
     let actions: PaletteActions
 
@@ -151,9 +168,9 @@ private struct CommandList: View {
         if session.listing.isEmpty {
             VStack(spacing: 10) {
                 Text("No tools found")
-                    .font(.system(size: 13, weight: .medium))
+                    .font(style.font(13, weight: .medium))
                 Button("Clear search") { session.setQuery("") }
-                    .controlSize(.small)
+                    .controlSize(style.controlSize)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
@@ -162,8 +179,8 @@ private struct CommandList: View {
                     LazyVStack(alignment: .leading, spacing: 1) {
                         ForEach(session.listing.sections) { section in
                             Text(section.title)
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(.secondary)
+                                .font(style.font(11, weight: .semibold))
+                                .foregroundStyle(style.secondary)
                                 .padding(.horizontal, 12)
                                 .padding(.top, 10)
                                 .padding(.bottom, 4)
@@ -207,6 +224,7 @@ private struct CommandList: View {
 }
 
 private struct CommandRow: View {
+    @Environment(\.paletteStyle) private var style
     let command: ToolCommand
     let isSelected: Bool
 
@@ -214,7 +232,7 @@ private struct CommandRow: View {
         HStack(spacing: 10) {
             CommandIconView(icon: command.icon, isSelected: isSelected)
             Text(command.title)
-                .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
+                .font(style.font(13, weight: isSelected ? .semibold : .medium))
                 .lineLimit(1)
             Spacer(minLength: 4)
             if isSelected {
@@ -222,11 +240,16 @@ private struct CommandRow: View {
             }
         }
         .padding(.horizontal, 8)
-        .frame(height: Theme.rowHeight)
-        .background(
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .fill(isSelected ? Theme.selection : Color.clear)
-        )
+        .frame(height: style.scaled(Theme.rowHeight))
+        .background {
+            let shape = RoundedRectangle(cornerRadius: style.radius(9), style: .continuous)
+            shape.fill(isSelected ? style.selection : Color.clear)
+                .overlay {
+                    if isSelected && style.showsBorders {
+                        shape.strokeBorder(style.border, lineWidth: 1.5)
+                    }
+                }
+        }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(command.title)
         .accessibilityHint(command.summary)
@@ -235,31 +258,33 @@ private struct CommandRow: View {
 }
 
 struct CommandIconView: View {
+    @Environment(\.paletteStyle) private var style
     let icon: CommandIcon
     var isSelected = false
 
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(Theme.chip)
+            RoundedRectangle(cornerRadius: style.radius(6), style: .continuous)
+                .fill(style.chip)
             switch icon {
             case .glyph(let glyph):
                 Text(glyph)
-                    .font(.system(size: glyph.count > 2 ? 9 : 11, weight: .semibold, design: .monospaced))
+                    .font(style.font(glyph.count > 2 ? 9 : 11, weight: .semibold, design: .monospaced))
                     .minimumScaleFactor(0.6)
                     .lineLimit(1)
             case .symbol(let name):
                 Image(systemName: name)
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(style.font(11, weight: .semibold))
             }
         }
-        .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
-        .frame(width: 26, height: 26)
+        .foregroundStyle(isSelected ? style.accent : style.secondaryColor)
+        .frame(width: style.scaled(26), height: style.scaled(26))
         .accessibilityHidden(true)
     }
 }
 
 private struct PreviewPane: View {
+    @Environment(\.paletteStyle) private var style
     let session: PaletteSession
     let actions: PaletteActions
 
@@ -269,10 +294,10 @@ private struct PreviewPane: View {
                 HStack(alignment: .top, spacing: 8) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(command.title)
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(style.font(13, weight: .semibold))
                         Text(command.summary)
-                            .font(.system(size: 11.5))
-                            .foregroundStyle(.secondary)
+                            .font(style.font(11.5))
+                            .foregroundStyle(style.secondary)
                             .lineLimit(1)
                     }
                     Spacer(minLength: 8)
@@ -298,6 +323,7 @@ private struct PreviewPane: View {
 // MARK: - Tool mode
 
 private struct ToolHeader: View {
+    @Environment(\.paletteStyle) private var style
     let session: PaletteSession
     let command: ToolCommand
     let actions: PaletteActions
@@ -324,26 +350,27 @@ private struct ToolHeader: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .frame(minHeight: 58)
+        .frame(minHeight: style.scaled(58))
     }
 
     private var title: some View {
         Group {
             Button(action: actions.back) {
                 Label("Tools", systemImage: "chevron.left")
-                    .font(.system(size: 12.5))
+                    .font(style.font(12.5))
             }
             .buttonStyle(.borderless)
             .help("Back to tools (Esc)")
             CommandIconView(icon: command.icon, isSelected: true)
             Text(command.title)
-                .font(.system(size: 15, weight: .semibold))
+                .font(style.font(15, weight: .semibold))
                 .lineLimit(1)
         }
     }
 }
 
 private struct ToolBody: View {
+    @Environment(\.paletteStyle) private var style
     let session: PaletteSession
     let command: ToolCommand
     let actions: PaletteActions
@@ -378,8 +405,8 @@ private struct ToolBody: View {
                         Spacer()
                         if let payload = session.payload {
                             Text(ByteCountText.string(payload.byteCount))
-                                .font(.system(size: 11))
-                                .foregroundStyle(.secondary)
+                                .font(style.font(11))
+                                .foregroundStyle(style.secondary)
                         }
                     }
                     if let payload = session.payload, payload.exceedsLimit {
@@ -387,9 +414,9 @@ private struct ToolBody: View {
                             symbol: "exclamationmark.triangle",
                             title: "Input too large to edit",
                             message: "\(ByteCountText.string(payload.byteCount)) is over the \(ByteCountText.string(session.limits.maxInputBytes)) limit. Clear it and paste a smaller selection.",
-                            tint: Theme.warning
+                            tint: style.warning
                         )
-                        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Theme.well))
+                        .wellBackground()
                     } else {
                         InputEditor(
                             text: session.payload?.text ?? "",
@@ -397,7 +424,7 @@ private struct ToolBody: View {
                             focus: focus,
                             onChange: { session.editInput($0) }
                         )
-                        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Theme.well))
+                        .wellBackground()
                     }
                 }
                 .padding(14)
@@ -419,6 +446,7 @@ private struct ToolBody: View {
 }
 
 private struct PanelLabel: View {
+    @Environment(\.paletteStyle) private var style
     let text: String
 
     init(_ text: String) {
@@ -427,8 +455,8 @@ private struct PanelLabel: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(.secondary)
+            .font(style.font(11, weight: .semibold))
+            .foregroundStyle(style.secondary)
             .accessibilityAddTraits(.isHeader)
     }
 }
@@ -436,6 +464,7 @@ private struct PanelLabel: View {
 // MARK: - Results
 
 private struct ResultContent: View {
+    @Environment(\.paletteStyle) private var style
     let session: PaletteSession
     let command: ToolCommand
     let actions: PaletteActions
@@ -479,14 +508,15 @@ private struct ResultContent: View {
         case .invalid(let diagnostic):
             ErrorView(diagnostic: diagnostic, input: session.payload?.text)
         case .unsupported(let message):
-            EmptyState(symbol: "nosign", title: "Not supported", message: message, tint: Theme.warning)
+            EmptyState(symbol: "nosign", title: "Not supported", message: message, tint: style.warning)
         case .tooLarge(let message):
-            EmptyState(symbol: "exclamationmark.triangle", title: "Too large", message: message, tint: Theme.warning)
+            EmptyState(symbol: "exclamationmark.triangle", title: "Too large", message: message, tint: style.warning)
         }
     }
 }
 
 private struct SuccessView: View {
+    @Environment(\.paletteStyle) private var style
     let output: ToolOutput
     let command: ToolCommand
     let dimmed: Bool
@@ -502,16 +532,16 @@ private struct SuccessView: View {
             }
             if output.presentation == .fields {
                 FieldsList(fields: output.fields, actions: actions)
-                    .frame(maxHeight: FieldsList.idealHeight(for: output.fields))
+                    .frame(maxHeight: FieldsList.idealHeight(for: output.fields, style: style))
                     .opacity(dimmed ? 0.45 : 1)
                 Spacer(minLength: 0)
             } else if isShortResult {
                 // One or two short lines: a compact well, fields below at their natural size.
                 resultText
-                    .frame(height: lineCount == 1 ? 46 : 66)
+                    .frame(height: style.resultHeight(lines: lineCount))
                 if !output.fields.isEmpty {
                     FieldsList(fields: output.fields, actions: actions)
-                        .frame(maxHeight: FieldsList.idealHeight(for: output.fields))
+                        .frame(maxHeight: FieldsList.idealHeight(for: output.fields, style: style))
                         .opacity(dimmed ? 0.45 : 1)
                 }
                 Spacer(minLength: 0)
@@ -543,7 +573,7 @@ private struct SuccessView: View {
             accessibilityLabel: "Result of \(command.title)",
             focus: focus
         )
-        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Theme.well))
+        .wellBackground()
     }
 
     /// Lines in the primary text, counted in the first few kilobytes only.
@@ -559,22 +589,24 @@ private struct SuccessView: View {
 
     /// Room for a few field rows below a long result, more in the tool view.
     private var fieldsHeight: CGFloat {
-        min(FieldsList.idealHeight(for: output.fields), isTool ? 230 : 118)
+        min(FieldsList.idealHeight(for: output.fields, style: style), style.scaled(isTool ? 230 : 118))
     }
 }
 
 private struct FieldsList: View {
+    @Environment(\.paletteStyle) private var style
     let fields: [ResultField]
     let actions: PaletteActions
 
-    /// Approximate content height, so short lists don't stretch to fill the pane.
-    static func idealHeight(for fields: [ResultField]) -> CGFloat {
+    /// Approximate content height, so short lists don't stretch to fill the
+    /// pane. Measured at the standard text size and scaled with it.
+    static func idealHeight(for fields: [ResultField], style: PaletteStyle) -> CGFloat {
         var height: CGFloat = 8
         for field in fields {
             let lines = min(4, field.value.reduce(1) { $1 == "\n" ? $0 + 1 : $0 })
             height += 33 + CGFloat(lines - 1) * 16 + (field.note == nil ? 0 : 15)
         }
-        return height
+        return style.scaled(height)
     }
 
     var body: some View {
@@ -592,12 +624,13 @@ private struct FieldsList: View {
                 }
                 .padding(.vertical, 4)
             }
-            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Theme.well))
+            .wellBackground()
         }
     }
 }
 
 private struct FieldRow: View {
+    @Environment(\.paletteStyle) private var style
     let field: ResultField
     let actions: PaletteActions
 
@@ -607,20 +640,20 @@ private struct FieldRow: View {
             // accessibility element with its own label and action.
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 Text(field.label)
-                    .font(.system(size: 11.5, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 112, alignment: .leading)
+                    .font(style.font(11.5, weight: .medium))
+                    .foregroundStyle(style.secondary)
+                    .frame(width: style.scaled(112), alignment: .leading)
                     .lineLimit(2)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(field.value.isEmpty ? "(empty)" : field.value)
-                        .font(field.isMonospaced ? .system(size: 12, design: .monospaced) : .system(size: 12.5))
-                        .foregroundStyle(field.value.isEmpty ? Color.secondary : toneColor)
+                        .font(field.isMonospaced ? style.codeFont(12) : style.font(12.5))
+                        .foregroundStyle(field.value.isEmpty ? style.secondaryColor : toneColor)
                         .lineLimit(4)
                         .textSelection(.enabled)
                     if let note = field.note {
                         Text(note)
-                            .font(.system(size: 11))
-                            .foregroundStyle(field.tone == .warning ? Theme.warning : Color.secondary)
+                            .font(style.font(11))
+                            .foregroundStyle(field.tone == .warning ? style.warning : style.secondaryColor)
                     }
                 }
             }
@@ -631,7 +664,7 @@ private struct FieldRow: View {
                     actions.copyField(field.id)
                 } label: {
                     Image(systemName: "doc.on.doc")
-                        .font(.system(size: 11))
+                        .font(style.font(11))
                 }
                 .buttonStyle(.borderless)
                 .help("Copy \(field.label)")
@@ -644,29 +677,57 @@ private struct FieldRow: View {
 
     private var toneColor: Color {
         switch field.tone {
-        case .normal: .primary
-        case .success: Theme.success
-        case .warning: Theme.warning
+        case .normal: style.primaryColor
+        case .success: style.success
+        case .warning: style.warning
         }
     }
 }
 
 private struct SwatchView: View {
+    @Environment(\.paletteStyle) private var style
     let swatch: ColorSwatch
     let label: String
 
     var body: some View {
-        RoundedRectangle(cornerRadius: 8, style: .continuous)
-            .fill(Color(.sRGB, red: swatch.red, green: swatch.green, blue: swatch.blue, opacity: swatch.alpha))
-            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Theme.hairline))
-            .frame(maxWidth: .infinity)
-            .frame(height: 30)
-            .accessibilityElement(children: .ignore)
+        let shape = RoundedRectangle(cornerRadius: style.radius(8), style: .continuous)
+        ZStack {
+            // A translucent color shows a checkerboard through it, so its
+            // alpha reads at a glance on any panel color.
+            if swatch.alpha < 1 {
+                Color.white
+                Checkerboard().fill(Color(white: 0.78))
+            }
+            Color(.sRGB, red: swatch.red, green: swatch.green, blue: swatch.blue, opacity: swatch.alpha)
+        }
+        .clipShape(shape)
+        .overlay(shape.strokeBorder(style.hairline))
+        .frame(maxWidth: .infinity)
+        .frame(height: style.scaled(30))
+        .accessibilityElement(children: .ignore)
         .accessibilityLabel("Color swatch \(label)")
     }
 }
 
+/// Every other square of a checkerboard, for showing transparency.
+private struct Checkerboard: Shape {
+    var square: CGFloat = 6
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let columns = Int((rect.width / square).rounded(.up))
+        let rows = Int((rect.height / square).rounded(.up))
+        for row in 0..<max(0, rows) {
+            for column in 0..<max(0, columns) where (row + column).isMultiple(of: 2) {
+                path.addRect(CGRect(x: rect.minX + CGFloat(column) * square, y: rect.minY + CGFloat(row) * square, width: square, height: square))
+            }
+        }
+        return path
+    }
+}
+
 private struct ErrorView: View {
+    @Environment(\.paletteStyle) private var style
     let diagnostic: ToolDiagnostic
     let input: String?
 
@@ -674,31 +735,31 @@ private struct ErrorView: View {
         VStack(alignment: .leading, spacing: 10) {
             Label {
                 Text(diagnostic.message)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(style.font(13, weight: .medium))
                     .fixedSize(horizontal: false, vertical: true)
             } icon: {
-                Image(systemName: "xmark.octagon.fill").foregroundStyle(Theme.failure)
+                Image(systemName: "xmark.octagon.fill").foregroundStyle(style.failure)
             }
             if let location = diagnostic.location {
                 Text("Line \(location.line), column \(location.column)")
-                    .font(.system(size: 11.5))
-                    .foregroundStyle(.secondary)
+                    .font(style.font(11.5))
+                    .foregroundStyle(style.secondary)
                 if let input, let context = ErrorContext(text: input, location: location) {
                     VStack(alignment: .leading, spacing: 0) {
                         Text(context.line)
-                        Text(context.caret).foregroundStyle(Theme.failure)
+                        Text(context.caret).foregroundStyle(style.failure)
                     }
-                    .font(.system(size: 12, design: .monospaced))
+                    .font(style.codeFont(12))
                     .lineLimit(1)
                     .padding(10)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(Theme.well))
+                    .wellBackground(radius: 8)
                     .accessibilityHidden(true)
                 }
             }
             Text("Copy is unavailable until the input is fixed.")
-                .font(.system(size: 11.5))
-                .foregroundStyle(.secondary)
+                .font(style.font(11.5))
+                .foregroundStyle(style.secondary)
             Spacer(minLength: 0)
         }
         .padding(4)
@@ -750,6 +811,7 @@ struct ErrorContext: Equatable {
 }
 
 private struct StatusBadge: View {
+    @Environment(\.paletteStyle) private var style
     let preview: PreviewState
 
     var body: some View {
@@ -762,30 +824,30 @@ private struct StatusBadge: View {
                     ProgressView().controlSize(.mini)
                     Text("Working…")
                 }
-                .foregroundStyle(.secondary)
+                .foregroundStyle(style.secondary)
             case .ready(let result):
                 switch result {
                 case .success(let output):
                     switch output.statusTone {
                     case .success:
-                        Label(output.status, systemImage: "checkmark.circle.fill").foregroundStyle(Theme.success)
+                        Label(output.status, systemImage: "checkmark.circle.fill").foregroundStyle(style.success)
                     case .warning:
-                        Label(output.status, systemImage: "exclamationmark.triangle.fill").foregroundStyle(Theme.warning)
+                        Label(output.status, systemImage: "exclamationmark.triangle.fill").foregroundStyle(style.warning)
                     case .normal:
-                        Text(output.status).foregroundStyle(.secondary)
+                        Text(output.status).foregroundStyle(style.secondary)
                     }
                 case .invalid:
-                    Label("Can’t copy", systemImage: "xmark.circle.fill").foregroundStyle(Theme.failure)
+                    Label("Can’t copy", systemImage: "xmark.circle.fill").foregroundStyle(style.failure)
                 case .needsInput:
-                    Text("Needs input").foregroundStyle(.secondary)
+                    Text("Needs input").foregroundStyle(style.secondary)
                 case .unsupported:
-                    Label("Unsupported", systemImage: "nosign").foregroundStyle(Theme.warning)
+                    Label("Unsupported", systemImage: "nosign").foregroundStyle(style.warning)
                 case .tooLarge:
-                    Label("Too large", systemImage: "exclamationmark.triangle.fill").foregroundStyle(Theme.warning)
+                    Label("Too large", systemImage: "exclamationmark.triangle.fill").foregroundStyle(style.warning)
                 }
             }
         }
-        .font(.system(size: 11.5, weight: .medium))
+        .font(style.font(11.5, weight: .medium))
         .lineLimit(1)
         .accessibilityElement(children: .combine)
     }
@@ -794,6 +856,7 @@ private struct StatusBadge: View {
 // MARK: - Options
 
 private struct OptionsBar: View {
+    @Environment(\.paletteStyle) private var style
     let session: PaletteSession
     let command: ToolCommand
 
@@ -822,7 +885,7 @@ private struct OptionsBar: View {
                             Text(choice.label).tag(choice.id)
                         }
                     }
-                    .controlSize(.small)
+                    .controlSize(style.controlSize)
                     .help(option.label)
                     .accessibilityLabel(option.label)
 
@@ -836,8 +899,8 @@ private struct OptionsBar: View {
                         set: { session.setOption(option.id, to: $0 ? "true" : "false", for: command.id) }
                     ))
                     .toggleStyle(.checkbox)
-                    .controlSize(.small)
-                    .font(.system(size: 11.5))
+                    .controlSize(style.controlSize)
+                    .font(style.font(11.5))
                 }
             }
         }
@@ -848,6 +911,7 @@ private struct OptionsBar: View {
 // MARK: - Footer and notices
 
 private struct FooterBar: View {
+    @Environment(\.paletteStyle) private var style
     let session: PaletteSession
     let actions: PaletteActions
     @State private var anchor = AnchorBox()
@@ -869,7 +933,7 @@ private struct FooterBar: View {
                 actions.showActions(from: anchor.view)
             } label: {
                 HStack(spacing: 6) {
-                    Text("Actions")
+                    Text("Actions").font(style.font(13))
                     Keycap("⌘K")
                 }
             }
@@ -877,29 +941,42 @@ private struct FooterBar: View {
             .background(AnchorView(box: anchor))
             .help("More actions (⌘K)")
             .accessibilityLabel("Actions")
-            Button(action: actions.copyAndClose) {
-                HStack(spacing: 8) {
-                    Text(session.copyTitle)
-                    Text("⌘↵").font(.system(size: 11, weight: .medium)).opacity(0.8)
-                }
-                .padding(.horizontal, 4)
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .disabled(!session.canCopy)
-            .accessibilityLabel(session.copyTitle)
-            .accessibilityHint(session.canCopy ? "Copies the result and returns to your previous app" : "Unavailable until there is a valid result")
+            copyButton
+                .disabled(!session.canCopy)
+                .accessibilityLabel(session.copyTitle)
+                .accessibilityHint(session.canCopy ? "Copies the result and returns to your previous app" : "Unavailable until there is a valid result")
         }
         .padding(.horizontal, 14)
-        .frame(height: 54)
+        .frame(height: style.scaled(54))
+    }
+
+    /// The system's prominent button in the system accent, or the theme's
+    /// own accent with a label that reads on it.
+    @ViewBuilder
+    private var copyButton: some View {
+        let button = Button(action: actions.copyAndClose) {
+            HStack(spacing: 8) {
+                Text(session.copyTitle)
+                Text("⌘↵").font(style.font(11, weight: .medium)).opacity(0.8)
+            }
+            .font(style.font(13))
+            .padding(.horizontal, 4)
+        }
+        if let accent = style.customAccent {
+            button.buttonStyle(AccentButtonStyle(fill: accent.fill, label: accent.label))
+        } else {
+            button
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+        }
     }
 
     private func hint(_ key: String, _ label: String) -> some View {
         HStack(spacing: 4) {
             Keycap(key)
             Text(label)
-                .font(.system(size: 11.5))
-                .foregroundStyle(.secondary)
+                .font(style.font(11.5))
+                .foregroundStyle(style.secondary)
         }
     }
 }
@@ -925,17 +1002,18 @@ private struct AnchorView: NSViewRepresentable {
 }
 
 private struct NoticeView: View {
+    @Environment(\.paletteStyle) private var style
     let session: PaletteSession
 
     var body: some View {
         if let notice = session.notice {
             Label(notice.message, systemImage: symbol(for: notice.kind))
-                .font(.system(size: 12, weight: .medium))
+                .font(style.font(12, weight: .medium))
                 .padding(.horizontal, 12)
                 .padding(.vertical, 7)
                 .background(Capsule().fill(.regularMaterial))
-                .overlay(Capsule().strokeBorder(Theme.hairline))
-                .foregroundStyle(notice.kind == .error ? Theme.failure : Color.primary)
+                .overlay(Capsule().strokeBorder(style.hairline))
+                .foregroundStyle(notice.kind == .error ? style.failure : style.primaryColor)
                 .transition(.opacity)
                 .task(id: notice.id) {
                     try? await Task.sleep(for: .seconds(notice.kind == .error ? 4 : 2))
@@ -957,24 +1035,25 @@ private struct NoticeView: View {
 // MARK: - Small pieces
 
 struct EmptyState: View {
+    @Environment(\.paletteStyle) private var style
     let symbol: String
     let title: String
     let message: String
-    var tint: Color = .secondary
+    var tint: Color?
 
     var body: some View {
         VStack(spacing: 8) {
             Image(systemName: symbol)
-                .font(.system(size: 22, weight: .light))
-                .foregroundStyle(tint)
+                .font(style.font(22, weight: .light))
+                .foregroundStyle(tint ?? style.secondaryColor)
             Text(title)
-                .font(.system(size: 13, weight: .medium))
+                .font(style.font(13, weight: .medium))
             if !message.isEmpty {
                 Text(message)
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+                    .font(style.font(12))
+                    .foregroundStyle(style.secondary)
                     .multilineTextAlignment(.center)
-                    .frame(maxWidth: 340)
+                    .frame(maxWidth: style.scaled(340))
             }
         }
         .padding(16)

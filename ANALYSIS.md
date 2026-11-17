@@ -609,40 +609,6 @@ focus. Rough effort: 30 minutes.
 
 ## Aesthetics and theming
 
-### Transparency is hard to distinguish in color swatches
-
-aesthetics and theming — nice-to-have
-
-Location: `Sources/ToolchordMac/Views/PaletteView.swift:609-614`. Designers inspecting translucent
-colors see them blended directly into the panel and cannot easily distinguish alpha from the
-surrounding surface.
-
-Suggested fix: put a subtle checkerboard under swatches, optionally with light/dark halves. Rough
-effort: 1-2 hours.
-
-### Custom surfaces have no dedicated high-contrast treatment
-
-aesthetics and theming — nice-to-have
-
-Location: `Sources/ToolchordMac/Views/Theme.swift:28-32,56-62`. Users enabling Increase Contrast
-receive the same custom well/selection fills and syntax palette. System colors can adapt, but the
-custom colors do not. No measured contrast failure is claimed.
-
-Suggested fix: add explicit high-contrast borders/background variants and test over real busy
-wallpapers as well as opaque snapshots. Rough effort: half a day.
-
-### Appearance and code text size follow the system
-
-aesthetics and theming — nice-to-have
-
-Location: `Sources/ToolchordMac/Views/Theme.swift:22-24`;
-`Sources/ToolchordMac/Settings/SettingsView.swift:78-104`. The panel follows the system appearance
-and uses a fixed 12 pt code font. Users who want a light palette in dark mode, or a larger result
-font, have no control. This is an optional customization, not a defect.
-
-Suggested fix: offer light/dark/auto and a small set of code-font sizes, persist only the
-preference, and validate minimum useful editor space. Rough effort: half a day.
-
 ### Three tool families share the same "#" icon
 
 aesthetics and theming — nice-to-have

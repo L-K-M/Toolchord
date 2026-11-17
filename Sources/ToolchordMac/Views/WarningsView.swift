@@ -4,6 +4,7 @@ import SwiftUI
 struct WarningsView: View {
     let warnings: [String]
     @Binding var isExpanded: Bool
+    @Environment(\.paletteStyle) private var style
 
     private let summaryCount = 3
 
@@ -23,13 +24,13 @@ struct WarningsView: View {
                             rows(warnings)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
-                        .frame(height: 100)
+                        .frame(height: style.scaled(100))
                         .focusable()
                         .accessibilityLabel("All warnings")
                     } label: {
                         Text(disclosureTitle)
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
+                            .font(style.font(11))
+                            .foregroundStyle(style.secondary)
                     }
                 }
             }
@@ -48,12 +49,12 @@ struct WarningsView: View {
             ForEach(Array(messages.enumerated()), id: \.offset) { _, warning in
                 Label {
                     Text(warning)
-                        .font(.system(size: 11.5))
+                        .font(style.font(11.5))
                         .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
                 } icon: {
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(Theme.warning)
+                        .foregroundStyle(style.warning)
                 }
             }
         }

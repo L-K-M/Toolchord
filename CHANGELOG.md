@@ -8,6 +8,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- Settings has General and Appearance tabs.
+- In light mode, the default success and warning colors are slightly darker,
+  so they keep 4.5:1 contrast on result wells.
 - The bundle identifier is now `ch.lkmc.Toolchord` (was `com.toolchord.Toolchord`),
   matching the house `ch.lkmc.<App>` convention.
 - Convert Unix Time has a new Auto unit, now the default: a value too large
@@ -26,6 +29,18 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Themes. Settings ▸ Appearance shows a live preview of the palette and
+  20 presets besides the default look. Every value stays editable: the
+  appearance, accent, surface color and opacity, wells, text, code and
+  syntax colors, status colors, corner radius, and code typeface, plus the
+  interface text size and code font size, which presets leave alone.
+  Custom colors pin Light or Dark. Toolchord checks the colors it draws
+  against WCAG contrast minimums and can raise the ones that fall short;
+  Increase Contrast raises them further and outlines wells and the
+  selection, and Reduce Transparency makes a translucent surface solid.
+  Copy Theme and Paste Theme share a look as JSON text.
+- A translucent color shows a checkerboard under its swatch, so its alpha
+  is visible on any panel color.
 - Project tooling: `scripts/build.sh` and `scripts/release.sh` stubs over the
   shared `lkm-build`/`lkm-release` engines, a CI workflow (`swift test` +
   Release app build + shellcheck), a tag-triggered release workflow that

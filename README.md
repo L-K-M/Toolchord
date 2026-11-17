@@ -68,7 +68,15 @@ script generates the Xcode project first; nothing is published without `--push`.
 | ⌘K | Actions: copy without closing, options, regenerate, and more |
 | esc | Back, or close |
 
-Settings (from the menu bar icon or ⌘, in the palette) cover the shortcut, opening at login, the menu bar icon, JSON and XML indentation, and recent tools.
+Settings (from the menu bar icon or ⌘, in the palette) have two tabs. General covers the shortcut, opening at login, the menu bar icon, JSON and XML indentation, and recent tools. Appearance covers themes.
+
+## Themes
+
+![Toolchord in the Synthwave theme: deep purple panel, pink accent, and cyan, pink, and orange JSON tokens.](docs/images/theme-synthwave.png)
+
+Settings ▸ Appearance shows a live preview of the palette and 20 presets besides the default look, from Memphis and Paper to Synthwave, Phosphor, and High Contrast. Pick one, then change any part of it: the appearance, accent, surface color and opacity, wells, text, code and syntax colors, status colors, corner roundness, and the code typeface. Interface text size and code size stay as you set them when you switch presets, and Reset to Default brings back Toolchord's own look.
+
+Custom colors keep the palette Light or Dark, because one fixed color can't stay legible in both; the System appearance follows your Mac with the standard colors. Toolchord checks the colors it draws against WCAG contrast minimums, lists any that fall short, and can raise them for you. With Increase Contrast it raises every theme color further and outlines wells and the selection; with Reduce Transparency a translucent surface turns solid. Copy Theme and Paste Theme share a look as a short JSON text through the clipboard.
 
 ## Develop
 
@@ -76,18 +84,19 @@ Settings (from the menu bar icon or ⌘, in the palette) cover the shortcut, ope
 make test
 ```
 
-More than 400 tests cover every tool fixture, a robustness sweep that runs each command against awkward input, the session's stale-result and copy rules, and the Mac layer's logic.
+More than 550 tests cover every tool fixture, a robustness sweep that runs each command against awkward input, the session's stale-result and copy rules, the theme model and its contrast audit, and the Mac layer's logic.
 
 ```bash
 make snapshots
 ```
 
-This renders palette states to `build/snapshots` for design review. `make benchmark` times every command on 10 KiB and 1 MiB inputs.
+This renders palette states to `build/snapshots` for design review, including one per theme preset and the Appearance tab. `make benchmark` times every command on 10 KiB and 1 MiB inputs.
 
 | Directory | Contents |
 | --- | --- |
 | `Sources/ToolchordCore` | Tool commands, input detection, and search ranking (Foundation and CryptoKit only) |
 | `Sources/ToolchordSession` | The palette draft: selection, evaluation scheduling, and copy gating |
+| `Sources/ToolchordTheme` | The theme model, presets, stored JSON format, and contrast audit (Foundation only) |
 | `Sources/ToolchordMac` | Panel, global shortcut, pasteboard, SwiftUI views, Settings, and the snapshot renderer |
 | `App`, `project.yml` | The app target: Info.plist keys, sandbox entitlements, and the Icon Composer icon |
 

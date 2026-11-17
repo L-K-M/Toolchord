@@ -4,7 +4,7 @@ Toolchord is a native macOS command palette for the small tasks developers do be
 
 The [shortcut UX](shortcut-ux.md) specifies panel behavior. The [implementation contracts](implementation-contracts.md) define results, copy targets, format rules, and fixtures. The [research](research.md) covers competitors, demand, and macOS constraints, and the [design review](design-review.md) explains how the proposed mockups shaped the final panel.
 
-**Status:** implemented. The app, its 56 commands, and more than 400 automated tests are in this repository; see the [README](../README.md) to build and run it.
+**Status:** implemented. The app, its 56 commands, and more than 550 automated tests are in this repository; see the [README](../README.md) to build and run it.
 
 ![Toolchord with pasted JSON: suggested tools on the left, a syntax-colored preview on the right, and Copy JSON & Close in the footer.](images/search-json.png)
 
@@ -31,7 +31,7 @@ Deferred tools and the reasons are in the [research](research.md#consensus-catal
 
 ## Panel layout
 
-One floating, non-activating panel (760 × 460 points, growing to 600 high for an open tool while keeping its top edge) appears on the display holding the frontmost window, falling back to the pointer's display. It uses Liquid Glass on macOS 26 and later and vibrancy on macOS 14–15, system fonts for controls, monospaced text for payloads, the user's accent color for selection, and works in light and dark appearance with Reduce Motion, Reduce Transparency, and Increase Contrast.
+One floating, non-activating panel (760 × 460 points, growing to 600 high for an open tool while keeping its top edge) appears on the display holding the frontmost window, falling back to the pointer's display. It uses Liquid Glass on macOS 26 and later and vibrancy on macOS 14–15, system fonts for controls, monospaced text for payloads, the user's accent color for selection, and works in light and dark appearance with Reduce Motion, Reduce Transparency, and Increase Contrast. That is the default look; a [theme](#themes) can change it.
 
 ### Search with live preview
 
@@ -42,6 +42,12 @@ Search is focused on open. Typing filters commands by name, alias, and tool fami
 Return opens the selected command in the same panel: an editable input (native undo, find, and IME) beside the full result, with the command's options in the header. Inspectors show labeled fields with individual Copy buttons; generators show their value, fields, and a Regenerate button. Escape returns to search with the draft intact.
 
 ![An open tool: JSON input on the left and the formatted result on the right.](images/tool-json.png)
+
+### Themes
+
+Settings ▸ Appearance changes how the palette looks, with a live preview of the real palette beside the controls. Twenty presets set every look value at once: the appearance, accent, surface color and its opacity over the glass, wells, text, code and syntax colors, status colors, corner radius, and code typeface. Each value then stays editable, the gallery keeps the most recent custom theme, and Reset to Default restores the original look. Interface text size (four steps that also grow the panel) and code font size belong to the person reading, so presets keep them.
+
+The System appearance follows the Mac with the standard colors. Custom colors pin Light or Dark, since one fixed color can't stay legible in both. Toolchord holds the colors it draws to WCAG 2.x minimums (4.5:1 for text, 3:1 for punctuation and the accent) on every background they sit on, lists failures in Settings, and can raise them. Increase Contrast raises them to 7:1 and 4.5:1, switches a pinned appearance to its high-contrast variant, and outlines wells, the selection, and keycaps. Reduce Transparency, like Increase Contrast, makes a translucent surface solid. Copy Theme and Paste Theme exchange a look as JSON text through the clipboard, which is read only when the person pastes. The [theme contracts](implementation-contracts.md#themes) have the details.
 
 ## Keyboard and clipboard behavior
 
@@ -58,7 +64,7 @@ Return opens the selected command in the same panel: an editable input (native u
 | **Escape** | Goes back from a tool to search with the draft intact; at the root, dismisses and discards the draft. Input methods get Escape and Return first while composing. |
 | **Tab** | Moves through controls in visible order; ⌥Tab inserts a tab character in the editor. |
 
-Tool input is processed on-device and kept in memory for the panel session only. Dismissal, Copy & Close, switching to another app, screen lock, sleep, user switching, and quitting all clear the draft and retire pending work. Preferences (shortcut, indentation, menu bar icon, recent command IDs) are stored separately and never include payloads, queries, or results. The app runs in the App Sandbox without the network entitlement, so Toolchord itself cannot send pasted data anywhere; results the user copies go to the standard system clipboard, which macOS may share through Universal Clipboard. Generated random strings stay on this Mac and are marked as confidential, which asks clipboard history apps not to keep or show them.
+Tool input is processed on-device and kept in memory for the panel session only. Dismissal, Copy & Close, switching to another app, screen lock, sleep, user switching, and quitting all clear the draft and retire pending work. Preferences (shortcut, indentation, menu bar icon, recent command IDs, theme, and text sizes) are stored separately and never include payloads, queries, or results. The app runs in the App Sandbox without the network entitlement, so Toolchord itself cannot send pasted data anywhere; results the user copies go to the standard system clipboard, which macOS may share through Universal Clipboard. Generated random strings stay on this Mac and are marked as confidential, which asks clipboard history apps not to keep or show them.
 
 ## Implementation
 
@@ -66,7 +72,8 @@ The code mirrors the plan's separation of concerns:
 
 - **ToolchordCore** — commands, input detection, and search ranking. Foundation and CryptoKit only; evaluation is a pure function of a request (input, resolved options, seed, clock, time zone, limits, cancellation).
 - **ToolchordSession** — the draft: query, payload, selection, options, generated values, revisions, background evaluation, and copy gating. Every change bumps the revision and disables copy before new work starts; completions publish only if their session and revision are still current.
-- **ToolchordMac** — the non-activating panel, Carbon hotkey and recorder, pasteboard, SwiftUI views with AppKit text views, Settings, welcome window, menu bar item, and a snapshot renderer.
+- **ToolchordTheme**: the theme model, the presets, the stored JSON format, and the contrast audit. Foundation only, so the unit tests check every preset without AppKit.
+- **ToolchordMac** — the non-activating panel, Carbon hotkey and recorder, pasteboard, SwiftUI views with AppKit text views, theme styling, Settings with its Appearance tab, welcome window, menu bar item, and a snapshot renderer.
 - **App** — a thin XcodeGen target: Info.plist keys, sandbox entitlements, and the Icon Composer app icon.
 
 Native findings and decisions are recorded in the [implementation contracts](implementation-contracts.md#native-panel-decisions).
@@ -83,6 +90,7 @@ Automated tests cover every fixture in the contracts. These checks also need a p
 - **Generators:** Open Generate UUID with nothing pasted. The value stays the same until ⌘R, and ⌘↵ copies the value shown.
 - **Focus and clipboard:** The shortcut and the menu bar item work across multiple displays, full-screen apps, and Stage Manager. Pressing the shortcut again refocuses the palette. Escape from a tool keeps the draft; switching apps clears it. Opening and closing the palette never changes the clipboard.
 - **Accessibility:** Complete each flow with the keyboard alone and with VoiceOver; results and errors are announced when they settle.
+- **Themes:** Apply a few light and dark presets and open the palette over light, dark, and busy windows; text stays legible on each. With Increase Contrast and Reduce Transparency on in System Settings, wells and the selection get outlines and a translucent surface turns solid, also while the palette is open. Copy Theme, change a color, then Paste Theme to get the copied look back; text sizes stay.
 
 ## After the first release
 
