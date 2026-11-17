@@ -285,7 +285,7 @@ import ToolchordCore
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 320, height: 200), styleMask: [.titled], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         defer { window.close() }
-        let (scrollView, textView) = CodeTextView.makeScrollable(editable: true)
+        let (scrollView, textView) = CodeTextView.makeScrollable(.editor, style: .standard)
         window.contentView = scrollView
         window.makeFirstResponder(textView)
         let undoManager = try #require(textView.undoManager)
@@ -318,7 +318,7 @@ import ToolchordCore
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 320, height: 200), styleMask: [.titled], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         defer { window.close() }
-        let (scrollView, textView) = CodeTextView.makeScrollable(editable: true)
+        let (scrollView, textView) = CodeTextView.makeScrollable(.editor, style: .standard)
         window.contentView = scrollView
         window.makeFirstResponder(textView)
         let undoManager = try #require(textView.undoManager)

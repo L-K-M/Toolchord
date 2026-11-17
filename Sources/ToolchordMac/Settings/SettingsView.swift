@@ -55,7 +55,9 @@ struct ShortcutSection: View {
     }
 }
 
-struct SettingsView: View {
+/// Settings ▸ General: the shortcut, login and menu bar options, tool
+/// defaults, and the privacy note.
+struct GeneralSettingsView: View {
     let model: AppModel
     @Bindable var preferences: AppPreferences
 
@@ -204,7 +206,7 @@ struct WelcomeView: View {
             Text("\(number)")
                 .font(.system(size: 12, weight: .bold, design: .rounded))
                 .frame(width: 20, height: 20)
-                .background(Circle().fill(Theme.chip))
+                .background(Circle().fill(Color.primary.opacity(0.07)))
             Text(text)
                 .fixedSize(horizontal: false, vertical: true)
         }

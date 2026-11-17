@@ -45,6 +45,43 @@ final class CodeTextView: NSTextView {
     /// Receives secret copies; nil means the system clipboard. Tests pass a
     /// private one.
     var secretClipboard: ClipboardWriting?
+    /// The theme preview in Settings draws code views that must never take
+    /// keyboard focus from the settings around them.
+    var refusesFocus = false
+    /// What the view shows, which decides how a new style reaches its text.
+    private(set) var content: Content = .editor
+    /// The style the view last applied.
+    private(set) var appliedStyle: PaletteStyle?
+
+    enum Content {
+        /// Plain input text, restyled in place.
+        case editor
+        /// Highlighted output, redrawn by its owner with the new style.
+        case result
+    }
+
+    override var acceptsFirstResponder: Bool {
+        !refusesFocus && super.acceptsFirstResponder
+    }
+
+    /// Sets the code font and colors for `style`. An editor's plain text is
+    /// restyled in place; a result's text is left to its owner, since
+    /// restyling it here would erase the token colors.
+    func apply(_ style: PaletteStyle) {
+        guard appliedStyle != style else { return }
+        appliedStyle = style
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineHeightMultiple = Theme.codeLineHeight
+        let font = style.codeFont
+        let color = style.nsColor(.code)
+        defaultParagraphStyle = paragraph
+        typingAttributes = [.font: font, .foregroundColor: color, .paragraphStyle: paragraph]
+        insertionPointColor = color
+        if content == .editor {
+            self.font = font
+            textColor = color
+        }
+    }
 
     override func copy(_ sender: Any?) {
         guard copySensitivity == .secret else {
@@ -101,7 +138,8 @@ final class CodeTextView: NSTextView {
         }
     }
 
-    static func makeScrollable(editable: Bool) -> (NSScrollView, CodeTextView) {
+    static func makeScrollable(_ content: Content, style: PaletteStyle) -> (NSScrollView, CodeTextView) {
+        let editable = content == .editor
         let scrollView = NSTextView.scrollableTextView()
         scrollView.drawsBackground = false
         scrollView.borderType = .noBorder
@@ -134,14 +172,10 @@ final class CodeTextView: NSTextView {
         textView.isAutomaticLinkDetectionEnabled = false
         textView.isAutomaticDataDetectionEnabled = false
         textView.smartInsertDeleteEnabled = false
-        textView.font = Theme.codeFont
-        textView.textColor = .labelColor
         textView.textContainerInset = NSSize(width: 10, height: 10)
         textView.textContainer?.lineFragmentPadding = 2
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.lineHeightMultiple = Theme.codeLineHeight
-        textView.defaultParagraphStyle = paragraph
-        textView.typingAttributes = [.font: Theme.codeFont, .foregroundColor: NSColor.labelColor, .paragraphStyle: paragraph]
+        textView.content = content
+        textView.apply(style)
         scrollView.documentView = textView
         return (scrollView, textView)
     }
@@ -157,10 +191,15 @@ struct InputEditor: NSViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(onChange: onChange) }
 
     func makeNSView(context: Context) -> NSScrollView {
-        let (scrollView, textView) = CodeTextView.makeScrollable(editable: true)
+        let (scrollView, textView) = CodeTextView.makeScrollable(.editor, style: context.environment.paletteStyle)
         textView.delegate = context.coordinator
         textView.string = text
         textView.setAccessibilityLabel(accessibilityLabel)
+        if context.environment.isPalettePreview {
+            textView.isEditable = false
+            textView.isSelectable = false
+            textView.refusesFocus = true
+        }
         context.coordinator.lastText = text
         focus.inputEditor = textView
         return scrollView
@@ -169,6 +208,7 @@ struct InputEditor: NSViewRepresentable {
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         context.coordinator.onChange = onChange
         guard let textView = scrollView.documentView as? CodeTextView else { return }
+        textView.apply(context.environment.paletteStyle)
         focus.inputEditor = textView
         // Only replace the text when it changed outside the editor (for
         // example Clear Input), so typing never loses the caret. Compare bytes,
@@ -220,9 +260,14 @@ struct ResultTextView: NSViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeNSView(context: Context) -> NSScrollView {
-        let (scrollView, textView) = CodeTextView.makeScrollable(editable: false)
+        let style = context.environment.paletteStyle
+        let (scrollView, textView) = CodeTextView.makeScrollable(.result, style: style)
         textView.setAccessibilityLabel(accessibilityLabel)
-        apply(to: textView, coordinator: context.coordinator)
+        if context.environment.isPalettePreview {
+            textView.isSelectable = false
+            textView.refusesFocus = true
+        }
+        apply(to: textView, style: style, coordinator: context.coordinator)
         focus?.resultView = textView
         return scrollView
     }
@@ -231,11 +276,12 @@ struct ResultTextView: NSViewRepresentable {
         guard let textView = scrollView.documentView as? CodeTextView else { return }
         focus?.resultView = textView
         textView.setAccessibilityLabel(accessibilityLabel)
-        apply(to: textView, coordinator: context.coordinator)
+        apply(to: textView, style: context.environment.paletteStyle, coordinator: context.coordinator)
     }
 
-    private func apply(to textView: CodeTextView, coordinator: Coordinator) {
-        coordinator.show(text, syntax: syntax, identity: identity, in: textView)
+    private func apply(to textView: CodeTextView, style: PaletteStyle, coordinator: Coordinator) {
+        textView.apply(style)
+        coordinator.show(text, syntax: syntax, style: style, identity: identity, in: textView)
         textView.copySensitivity = sensitivity
         textView.alphaValue = dimmed ? 0.45 : 1
     }
@@ -244,20 +290,23 @@ struct ResultTextView: NSViewRepresentable {
     final class Coordinator {
         private var text: String?
         private var syntax: SyntaxKind?
+        private var style: PaletteStyle?
         private var identity: String?
 
         /// Shows `text` in `textView`. A result for a different identity starts
         /// at the top, even when its text is the same; a changed result for the
-        /// same identity, such as after an edit to the input, keeps the scroll
-        /// position (AppKit clamps it when the new text is shorter).
-        func show(_ text: String, syntax: SyntaxKind, identity: String, in textView: NSTextView) {
+        /// same identity, such as after an edit to the input or a theme
+        /// change, keeps the scroll position (AppKit clamps it when the new
+        /// text is shorter).
+        func show(_ text: String, syntax: SyntaxKind, style: PaletteStyle, identity: String, in textView: NSTextView) {
             let isNewResult = identity != self.identity
             self.identity = identity
             let isSameText = self.text.map { $0.hasSameUTF8(as: text) } ?? false
-            if !isSameText || syntax != self.syntax {
+            if !isSameText || syntax != self.syntax || style != self.style {
                 self.text = text
                 self.syntax = syntax
-                textView.textStorage?.setAttributedString(SyntaxHighlighter.attributedString(for: text, syntax: syntax))
+                self.style = style
+                textView.textStorage?.setAttributedString(SyntaxHighlighter.attributedString(for: text, syntax: syntax, style: style))
             }
             if isNewResult { textView.scroll(.zero) }
         }

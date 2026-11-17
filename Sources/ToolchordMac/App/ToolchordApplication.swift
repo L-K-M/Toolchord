@@ -46,6 +46,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         updateStatusItem()
         observePreferences()
+        observeTheme()
 
         if !preferences.hasCompletedWelcome {
             showWelcome()
@@ -72,6 +73,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 self?.updateStatusItem()
                 self?.observePreferences()
             }
+        }
+    }
+
+    /// Keeps the palette drawn in the current theme and text sizes.
+    private func observeTheme() {
+        withObservationTracking {
+            panelController.applyTheme(preferences.theme, textSizes: preferences.textSizes)
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.observeTheme() }
         }
     }
 
@@ -138,8 +148,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func showSettings() {
         if settingsWindow == nil {
-            let window = makeWindow(title: "Toolchord Settings", content: SettingsView(model: model))
-            window.setFrameAutosaveName("Settings")
+            let tabs = SettingsTabViewController(model: model, clipboard: clipboard)
+            let window = NSWindow(contentViewController: tabs)
+            window.styleMask = [.titled, .closable]
+            window.toolbarStyle = .preference
+            window.isReleasedWhenClosed = false
+            window.delegate = self
+            window.center()
             settingsWindow = window
         }
         present(settingsWindow)

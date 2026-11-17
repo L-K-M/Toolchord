@@ -7,7 +7,7 @@ public enum ThemeReference {
     public static func glass(_ tone: ThemeTone) -> ThemeColor {
         switch tone {
         case .light: ThemeColor(0xF2F2F5)
-        case .dark: ThemeColor(0x292A2E)
+        case .dark: ThemeColor(0x29292E)
         }
     }
 
@@ -40,4 +40,22 @@ public enum ThemeReference {
 
     /// The selected row is the accent at this opacity over the panel.
     public static let selectionOpacity = 0.22
+
+    /// An opaque stand-in for the system label color, where the editor
+    /// needs a concrete starting color.
+    public static func label(_ tone: ThemeTone) -> ThemeColor {
+        switch tone {
+        case .light: ThemeColor(0x1D1D1F)
+        case .dark: ThemeColor(0xF5F5F7)
+        }
+    }
+
+    /// An opaque stand-in for the secondary label color that still reads
+    /// at 4.5:1 on the window background.
+    public static func secondaryLabel(_ tone: ThemeTone) -> ThemeColor {
+        switch tone {
+        case .light: ThemeColor(0x6E6E73)
+        case .dark: ThemeColor(0xA1A1A6)
+        }
+    }
 }

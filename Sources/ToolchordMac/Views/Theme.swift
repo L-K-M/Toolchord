@@ -1,10 +1,9 @@
 import AppKit
 import SwiftUI
 
-/// Sizes, fonts, and colors shared by the palette views. Colors are dynamic
-/// system or custom colors, so light/dark appearance and Increase Contrast
-/// work without extra code.
-@MainActor
+/// Sizes the palette is designed at: the standard text size and an
+/// 18-point corner radius. `PaletteStyle` scales them for the chosen text
+/// size and theme.
 enum Theme {
     // MARK: Layout
 
@@ -13,59 +12,23 @@ enum Theme {
     static let toolHeight: CGFloat = 600
     /// Below this width, editors and results stack vertically.
     static let narrowWidth: CGFloat = 640
-    static let cornerRadius: CGFloat = 18
     static let listWidth: CGFloat = 300
     static let rowHeight: CGFloat = 36
-
-    // MARK: Fonts
-
-    static let searchFont = NSFont.systemFont(ofSize: 20, weight: .regular)
-    static let codeFont = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
     static let codeLineHeight: CGFloat = 1.25
 
-    // MARK: Colors
+    // MARK: Settings colors
 
-    static func dynamic(light: NSColor, dark: NSColor) -> NSColor {
-        NSColor(name: nil) { appearance in
-            appearance.bestMatch(from: [.darkAqua, .aqua, .accessibilityHighContrastDarkAqua, .accessibilityHighContrastAqua])
-                .map { $0 == .darkAqua || $0 == .accessibilityHighContrastDarkAqua } == true ? dark : light
-        }
-    }
-
-    static func hex(_ value: UInt32) -> NSColor {
-        NSColor(
-            srgbRed: CGFloat((value >> 16) & 0xFF) / 255,
-            green: CGFloat((value >> 8) & 0xFF) / 255,
-            blue: CGFloat(value & 0xFF) / 255,
-            alpha: 1
-        )
-    }
-
-    // Token colors keep at least 4.5:1 contrast on the panel in both appearances.
-    static let syntaxKey = dynamic(light: hex(0x2F4FB8), dark: hex(0xA3B5FF))
-    static let syntaxString = dynamic(light: hex(0x1B6E2E), dark: hex(0x93DCA2))
-    static let syntaxNumber = dynamic(light: hex(0x9A4A0B), dark: hex(0xF4B57E))
-    static let syntaxLiteral = dynamic(light: hex(0x7D2AA8), dark: hex(0xD9A6F7))
-    static let syntaxComment = NSColor.secondaryLabelColor
-    static let syntaxPunctuation = NSColor.secondaryLabelColor
-
-    static let success = Color(nsColor: dynamic(light: hex(0x1B7F3B), dark: hex(0x6FD68C)))
-    static let warning = Color(nsColor: dynamic(light: hex(0x9A5B00), dark: hex(0xF5C46B)))
-    static let failure = Color(nsColor: dynamic(light: hex(0xB3261E), dark: hex(0xFF9B91)))
-
-    /// Background for code and result areas, slightly separated from the panel material.
-    static let well = Color(nsColor: dynamic(
-        light: NSColor.black.withAlphaComponent(0.035),
-        dark: NSColor.white.withAlphaComponent(0.045)
-    ))
-    static let selection = Color.accentColor.opacity(0.22)
-    static let chip = Color.primary.opacity(0.07)
-    static let hairline = Color(nsColor: .separatorColor)
+    // The Settings and welcome windows keep the system look whatever the
+    // palette's theme, so they use the standard theme's status colors.
+    static let success = PaletteStyle.standard.success
+    static let warning = PaletteStyle.standard.warning
+    static let failure = PaletteStyle.standard.failure
 }
 
 /// A small keycap label such as "⌘K" or "↵".
 struct Keycap: View {
     let text: String
+    @Environment(\.paletteStyle) private var style
 
     init(_ text: String) {
         self.text = text
@@ -73,11 +36,14 @@ struct Keycap: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 10.5, weight: .medium, design: .rounded))
-            .foregroundStyle(.secondary)
+            .font(style.font(10.5, weight: .medium, design: .rounded))
+            .foregroundStyle(style.secondary)
             .padding(.horizontal, 5)
-            .frame(minWidth: 18, minHeight: 18)
-            .background(RoundedRectangle(cornerRadius: 4).strokeBorder(Color.secondary.opacity(0.45), lineWidth: 0.8))
+            .frame(minWidth: style.scaled(18), minHeight: style.scaled(18))
+            .background(
+                RoundedRectangle(cornerRadius: style.radius(4))
+                    .strokeBorder(style.secondaryColor.opacity(style.showsBorders ? 0.9 : 0.45), lineWidth: style.showsBorders ? 1 : 0.8)
+            )
             .accessibilityHidden(true)
     }
 }

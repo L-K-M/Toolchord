@@ -13,7 +13,7 @@ import ToolchordSession
 @Suite(.timeLimit(.minutes(1)))
 struct SecretCopyTests {
     @Test func copyingASelectionOfASecretWritesItAsSecret() {
-        let (_, textView) = CodeTextView.makeScrollable(editable: false)
+        let (_, textView) = CodeTextView.makeScrollable(.result, style: .standard)
         let clipboard = MemoryClipboard()
         textView.secretClipboard = clipboard
         textView.copySensitivity = .secret

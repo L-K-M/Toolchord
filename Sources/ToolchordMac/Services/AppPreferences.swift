@@ -2,10 +2,11 @@ import Foundation
 import Observation
 import ToolchordCore
 import ToolchordSession
+import ToolchordTheme
 
 /// Settings stored in `UserDefaults`. Never stores payloads, queries, or
-/// results: only the shortcut, display preferences, and recently used
-/// command IDs.
+/// results: only the shortcut, display preferences, the theme, and
+/// recently used command IDs.
 @MainActor
 @Observable
 public final class AppPreferences: SessionPreferences {
@@ -32,6 +33,10 @@ public final class AppPreferences: SessionPreferences {
         static let recents = "recentCommandIDs"
         static let remembersRecents = "remembersRecentCommands"
         static let showsMenuBarIcon = "showsMenuBarIcon"
+        static let theme = "theme"
+        static let customTheme = "customTheme"
+        static let codeFontSize = "codeFontSize"
+        static let interfaceTextSize = "interfaceTextSize"
     }
 
     @ObservationIgnored private let defaults: UserDefaults
@@ -64,6 +69,31 @@ public final class AppPreferences: SessionPreferences {
         didSet { defaults.set(recentCommandIDs, forKey: Key.recents) }
     }
 
+    /// The palette's look, always sanitized; change it with `setTheme`.
+    /// Stored as JSON text so `defaults read` shows it. A look that matches
+    /// no preset is also kept as the custom theme, so trying a preset never
+    /// loses it.
+    public private(set) var theme: PaletteTheme {
+        didSet {
+            defaults.set(theme.jsonText, forKey: Key.theme)
+            if ThemePresets.matching(theme) == nil { customTheme = theme }
+        }
+    }
+
+    /// The most recent look that matched no preset, offered in the gallery
+    /// as Custom; nil until there is one.
+    public private(set) var customTheme: PaletteTheme? {
+        didSet { defaults.set(customTheme?.jsonText, forKey: Key.customTheme) }
+    }
+
+    /// Text sizes, kept when a preset or pasted theme is applied.
+    public var textSizes: ThemeTextSizes {
+        didSet {
+            defaults.set(textSizes.codeFontSize, forKey: Key.codeFontSize)
+            defaults.set(textSizes.interface.rawValue, forKey: Key.interfaceTextSize)
+        }
+    }
+
     public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         defaults.register(defaults: [
@@ -86,6 +116,14 @@ public final class AppPreferences: SessionPreferences {
         remembersRecents = defaults.bool(forKey: Key.remembersRecents)
         showsMenuBarIcon = defaults.bool(forKey: Key.showsMenuBarIcon)
         recentCommandIDs = defaults.stringArray(forKey: Key.recents) ?? []
+        // Stored text another version wrote, or someone edited, may hold
+        // values this version rejects; decoding keeps what it can.
+        theme = defaults.string(forKey: Key.theme).flatMap(PaletteTheme.init(storedText:)) ?? .standard
+        customTheme = defaults.string(forKey: Key.customTheme).flatMap(PaletteTheme.init(storedText:))
+        textSizes = ThemeTextSizes(
+            codeFontSize: defaults.object(forKey: Key.codeFontSize) as? Double ?? ThemeTextSizes.defaultCodeFontSize,
+            interface: defaults.string(forKey: Key.interfaceTextSize).flatMap(InterfaceTextSize.init(rawValue:)) ?? .standard
+        )
     }
 
     /// Whether a shortcut was ever saved (as opposed to the built-in default).
@@ -93,6 +131,27 @@ public final class AppPreferences: SessionPreferences {
 
     public func clearRecents() {
         recentCommandIDs = []
+    }
+
+    // MARK: Theme
+
+    /// Changes the look, sanitized first.
+    public func setTheme(_ newValue: PaletteTheme) {
+        let sanitized = newValue.sanitized
+        guard sanitized != theme else { return }
+        theme = sanitized
+    }
+
+    /// Applies a preset's look. Text sizes stay as they are.
+    public func apply(_ preset: ThemePreset) {
+        setTheme(preset.theme)
+    }
+
+    /// Goes back to Toolchord's standard look and text sizes. The custom
+    /// theme stays in the gallery.
+    public func resetAppearance() {
+        setTheme(.standard)
+        textSizes = .standard
     }
 
     // MARK: SessionPreferences

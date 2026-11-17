@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 import ToolchordCore
 import ToolchordSession
+import ToolchordTheme
 
 /// Shows, focuses, and dismisses the palette, and connects the session to
 /// the clipboard, menus, and window.
@@ -25,10 +26,16 @@ public final class PanelController: NSObject, PaletteActions, PaletteCommandHand
     private let panel = PalettePanel()
     private let focus = PaletteFocus()
     private var hostingView: NSHostingView<PaletteView>!
+    private var surface: PaletteSurface!
     private var originApplication: NSRunningApplication?
     private var suppressResignDismissal = 0
     private var observers: [NSObjectProtocol] = []
     private var isNarrow = false
+    private var listWidth = Theme.listWidth
+    private var theme = PaletteTheme.standard
+    private var textSizes = ThemeTextSizes.standard
+    private var style = PaletteStyle.standard
+    private var isStyleStale = false
 
     /// Opens Settings; set by the app delegate.
     public var settingsHandler: (() -> Void)?
@@ -56,7 +63,8 @@ public final class PanelController: NSObject, PaletteActions, PaletteCommandHand
         let frontmost = NSWorkspace.shared.frontmostApplication
         originApplication = frontmost?.processIdentifier == ProcessInfo.processInfo.processIdentifier ? nil : frontmost
         let screen = ScreenLocator.targetScreen(for: originApplication)
-        let size = CGSize(width: Theme.panelWidth, height: session.isInTool ? Theme.toolHeight : Theme.searchHeight)
+        if isStyleStale { restyle() }
+        let size = CGSize(width: style.panelWidth, height: session.isInTool ? style.toolHeight : style.searchHeight)
         let frame = ScreenLocator.frame(for: size, on: screen)
         updateLayout(width: frame.width)
         panel.setFrame(frame, display: false)
@@ -87,60 +95,68 @@ public final class PanelController: NSObject, PaletteActions, PaletteCommandHand
 
     private func installContent() {
         hostingView = NSHostingView(rootView: makeRootView())
-        hostingView.translatesAutoresizingMaskIntoConstraints = false
-
-        let container: NSView
-        if #available(macOS 26.0, *) {
-            let glass = NSGlassEffectView()
-            glass.cornerRadius = Theme.cornerRadius
-            glass.style = .regular
-            glass.contentView = hostingView
-            container = glass
-        } else {
-            let effect = NSVisualEffectView()
-            effect.material = .popover
-            effect.state = .active
-            effect.blendingMode = .behindWindow
-            effect.maskImage = Self.roundedMask(radius: Theme.cornerRadius)
-            effect.addSubview(hostingView)
-            NSLayoutConstraint.activate([
-                hostingView.leadingAnchor.constraint(equalTo: effect.leadingAnchor),
-                hostingView.trailingAnchor.constraint(equalTo: effect.trailingAnchor),
-                hostingView.topAnchor.constraint(equalTo: effect.topAnchor),
-                hostingView.bottomAnchor.constraint(equalTo: effect.bottomAnchor),
-            ])
-            container = effect
-        }
-        panel.contentView = container
+        surface = PaletteSurface(content: hostingView, blending: .behindWindow)
+        panel.contentView = surface.view
     }
 
     private func makeRootView() -> PaletteView {
-        PaletteView(session: session, actions: self, focus: focus, isNarrow: isNarrow)
+        PaletteView(session: session, actions: self, focus: focus, isNarrow: isNarrow, listWidth: listWidth, style: style)
     }
 
     private func updateLayout(width: CGFloat) {
-        let narrow = width < Theme.narrowWidth
-        if narrow != isNarrow {
+        let narrow = style.isNarrow(width: width)
+        let list = style.listWidth(forPanelWidth: width)
+        if narrow != isNarrow || list != listWidth {
             isNarrow = narrow
+            listWidth = list
             hostingView.rootView = makeRootView()
         }
     }
 
-    static func roundedMask(radius: CGFloat) -> NSImage {
-        let edge = radius * 2 + 1
-        let image = NSImage(size: NSSize(width: edge, height: edge), flipped: false) { rect in
-            NSColor.black.setFill()
-            NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius).fill()
-            return true
+    // MARK: - Theme
+
+    /// Draws the palette with `theme` and `textSizes` from now on. A change
+    /// to Increase Contrast or Reduce Transparency restyles it as well.
+    public func applyTheme(_ theme: PaletteTheme, textSizes: ThemeTextSizes) {
+        self.theme = theme
+        self.textSizes = textSizes
+        restyleWhenVisible()
+    }
+
+    /// Restyles now if the panel is showing. Otherwise the next showing
+    /// restyles once, so dragging a color well in Settings doesn't rebuild
+    /// the hidden panel on every step.
+    private func restyleWhenVisible() {
+        if panel.isVisible {
+            restyle()
+        } else {
+            isStyleStale = true
         }
-        image.capInsets = NSEdgeInsets(top: radius, left: radius, bottom: radius, right: radius)
-        image.resizingMode = .stretch
-        return image
+    }
+
+    private func restyle() {
+        isStyleStale = false
+        let workspace = NSWorkspace.shared
+        let next = PaletteStyle(
+            theme: theme,
+            textSizes: textSizes,
+            increaseContrast: workspace.accessibilityDisplayShouldIncreaseContrast,
+            reduceTransparency: workspace.accessibilityDisplayShouldReduceTransparency
+        )
+        guard next != style else { return }
+        style = next
+        surface.apply(style)
+        hostingView.rootView = makeRootView()
+        if panel.isVisible {
+            updateLayout(width: panel.frame.width)
+            syncPanelSize()
+        }
+        panel.invalidateShadow()
     }
 
     /// Grows or shrinks the panel for the current mode, keeping its top edge.
     private func syncPanelSize() {
-        let height = session.isInTool ? Theme.toolHeight : Theme.searchHeight
+        let height = session.isInTool ? style.toolHeight : style.searchHeight
         var frame = panel.frame
         guard abs(frame.height - height) > 0.5 else { return }
         let top = frame.maxY
@@ -401,6 +417,9 @@ public final class PanelController: NSObject, PaletteActions, PaletteCommandHand
         })
         observers.append(center.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.dismiss(.system) }
+        })
+        observers.append(workspace.addObserver(forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.restyleWhenVisible() }
         })
     }
 }

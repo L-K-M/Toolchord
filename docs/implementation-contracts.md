@@ -87,6 +87,43 @@ All calendar math uses exact integers on the proleptic Gregorian calendar for ye
 - **Convert Markdown to Plain Text** renders the Markdown to HTML as above (keeping task markers as `[ ]` and `[x]` text) and converts that HTML with the HTML rules, so inline and block HTML, a `<script>` or `<style>` spanning paragraphs, and hidden elements behave exactly as they would in a browser. Soft line breaks become spaces.
 - Detection marks Markdown from weighted constructs (a fence, inline link, or table alone; a heading or bold text plus one more construct; or three weaker ones), and HTML from a `<!DOCTYPE html>`, a first element that is an HTML element, or two HTML tags in text that isn't Markdown.
 
+## Themes
+
+A theme (`PaletteTheme` in `Sources/ToolchordTheme`) is the palette's look: what a preset sets and what Copy Theme shares. Text sizes are stored beside it and never change with a preset or a pasted theme.
+
+| Setting | Values | Default |
+| --- | --- | --- |
+| Appearance | System, Light, or Dark | System |
+| Colors | Fifteen optional roles: accent, surface, wells, text, secondary text, code text, keys and tags, strings, numbers and attributes, literals, punctuation, comments, success, warning, and failure. A role left out is automatic. | All automatic |
+| Surface opacity | 0 (the system glass alone) to 1 (solid), in hundredths | 0 |
+| Corner radius | 0 to 28 points; wells, rows, and chips keep their proportions | 18 |
+| Code typeface | Any installed monospaced family; a missing or proportional one draws SF Mono | SF Mono |
+| Interface text size | Small (90%), Standard, Large (115%), or Extra Large (130%); the panel grows with it | Standard |
+| Code font size | 10 to 22 points | 12 |
+
+- **Appearance.** The System appearance draws the standard colors and keeps no custom colors. A custom color needs Light or Dark, because one fixed color can't stay legible in both. Automatic roles draw the system's colors (label, accent, window background) or Toolchord's own syntax and status colors; automatic code text, punctuation, and comments follow a custom text or secondary text color.
+- **Contrast.** `ThemeAudit` holds every color Toolchord draws (custom colors and its own defaults, not system colors) to WCAG 2.x minimums: 4.5:1 for text, code tokens, and status labels, and 3:1 for punctuation and the accent. Each color is checked on every background it can sit on: the surface over the reference glass (`#F2F2F5` light, `#29292E` dark, the snapshots' stand-in), the opaque surface Reduce Transparency shows, the wells on both, and, for text, the selection. A pinned appearance must agree with the panel's lightness (relative luminance at most 0.2 for Dark, at least 0.4 for Light), because system controls draw for it. Every preset passes. A custom theme isn't held to the rules: Settings lists what fails and offers Raise Contrast, which moves each failing color the least distance toward black or white that passes, keeping its hue.
+- **Increase Contrast** raises every color Toolchord draws to 7:1 (text) or 4.5:1 (punctuation and the accent) against the opaque panel, switches a pinned appearance to its high-contrast variant, and outlines wells, the selection, keycaps, and a themed Copy button. **Reduce Transparency**, like Increase Contrast, makes a drawn surface opaque; with no surface fill, the system material handles both settings itself.
+- **Accent.** A custom accent draws the Copy button itself, with black or white text, whichever reads better on it, because the system's prominent button always uses white.
+- **Storage.** User defaults hold the theme and the custom theme as JSON text (`theme`, `customTheme`), plus `codeFontSize` and `interfaceTextSize`. Reading is lenient per value: an unreadable color loses that color, an unreadable setting takes its default, and text that is not a JSON object gives the standard theme. Every stored theme is sanitized: numbers clamped and rounded, colors dropped under System.
+- **Sharing.** Copy Theme writes pretty, key-sorted JSON with a `toolchordTheme` format version. Paste Theme reads the clipboard only when clicked, rejects text over 16 KB or without the version, and applies the look without changing text sizes.
+
+```json
+{
+  "appearance" : "dark",
+  "codeFont" : "Menlo",
+  "colors" : {
+    "accent" : "#FF2E97",
+    "surface" : "#1A1033"
+  },
+  "cornerRadius" : 14,
+  "surfaceOpacity" : 1,
+  "toolchordTheme" : 1
+}
+```
+
+Presets, in gallery order: Default (the standard look); light Memphis, Paper, Newsprint, Bubblegum, Lemonade, Peppermint, Matcha, Vaporwave, and Frost (translucent); and dark Synthwave, Phosphor, Amber, Midnight, Halloween, Lagoon, Aurora, Cosmic, Cocoa, Smoke (translucent), and High Contrast. Presets name only monospaced families every Mac ships (Andale Mono, Courier New, Menlo, Monaco, and PT Mono). `make snapshots` renders each as `theme-<id>.png`.
+
 ## Fixtures
 
 Literal strings use JSON escape notation where necessary. Structured copy targets compare parsed structure and order; formatting and component transforms compare exact text.
@@ -138,6 +175,7 @@ Observed on macOS 27.2.1 with Xcode 27.2 and Swift 6.4 on Apple silicon; deploym
 | Focus | The originating app stays active, so closing the panel returns focus without reactivation. Toolchord reactivates the origin only if it became active itself. Resign-key and third-app activation dismiss the panel; the Actions menu suppresses resign-key while tracking and dismisses afterwards if another app became active. |
 | Keys | The panel handles ⌘↵, ⇧⌘↵, ⌘K, ⌘R, ⇧⌘⌫, ⌘,, and ⌘W, and sends ⌘X/C/V/A/Z, ⇧⌘Z, and ⌘F to the first responder, so editing works without an active main menu. Letters and punctuation match the character the active layout types with ⌘ held, as menus do (⌘Z on French AZERTY is Undo, not Close, and Dvorak – QWERTY ⌘ uses its QWERTY mapping), falling back to the ASCII-capable layout for non-Latin ones; Return and Delete match key codes. The shortcut recorder names keys and checks the ⌘Q reservation with the same mapping. While an input method has marked text, every key goes to it first. |
 | Editor | Text that changes outside the editor (Clear Input) is applied as one undoable change through `shouldChangeText`/`didChangeText`, so ⌘Z restores it instead of replaying stale typing ranges. |
+| Theme | `PaletteSurface` keeps the system material (Liquid Glass or vibrancy) and pins the theme's appearance on it, so SwiftUI, AppKit text, and system controls follow; `PaletteView` draws the theme's surface over the material at the theme's opacity. Settings ▸ Appearance shows the same surface with a demo session, blending within its window; its hit testing returns no view and its text views refuse focus. A hidden panel restyles when it next opens, so editing a theme doesn't rebuild it on every change. |
 | Pasteboard | Read only inside the paste command. Opening, navigating, and dismissing never touch it; writes use `clearContents` and `setString`, or, for results marked secret (random strings), `prepareForNewContents(with: .currentHostOnly)`, which keeps them off Universal Clipboard, and `writeObjects` with an `org.nspasteboard.ConcealedType` marker asking clipboard history apps not to keep or show them. Copying a selection of such a result in the result view (⌘C or its context menu) writes it the same way. The write's result decides whether Copy & Close dismisses. |
 | Distribution | App Sandbox with no other entitlements (so no network), hardened runtime, ad-hoc signed for local builds; set a team and Developer ID to notarize. `SMAppService.mainApp` login item, off by default. |
 | Icon | `App/AppIcon.icon`, an Icon Composer document generated by `Scripts/make-icon.swift`; Xcode compiles the Liquid Glass icon and an `.icns` fallback for macOS 14–25. |

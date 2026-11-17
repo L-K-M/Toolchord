@@ -114,6 +114,26 @@ import Testing
         #expect(PaletteTheme.imported(from: #"{"toolchordTheme": 1}"# + padding) == .failure(.tooLong))
     }
 
+    @Test func editingStartsFromWhatThePaletteDrawsNow() {
+        let plain = PaletteTheme(appearance: .dark)
+        #expect(plain.startingColor(for: .keys, tone: .dark) == ThemeDefaults.color(.keys, tone: .dark))
+        #expect(plain.startingColor(for: .surface, tone: .dark) == ThemeReference.windowBackground(.dark))
+        #expect(plain.startingColor(for: .text, tone: .dark) == ThemeReference.label(.dark))
+        #expect(plain.startingColor(for: .accent, tone: .light) == ThemeReference.systemAccent(.light))
+        // The automatic well is a wash over the surface, made opaque.
+        #expect(plain.startingColor(for: .well, tone: .light) == ThemeColor(0xF6F6F6))
+        // Code text, punctuation, and comments follow the theme's text colors.
+        let themed = PaletteTheme(appearance: .dark, colors: [.text: ThemeColor(0xF5F0FF), .secondaryText: ThemeColor(0xC6B5E8), .keys: ThemeColor(0x36F9F6)])
+        #expect(themed.startingColor(for: .code, tone: .dark) == ThemeColor(0xF5F0FF))
+        #expect(themed.startingColor(for: .comments, tone: .dark) == ThemeColor(0xC6B5E8))
+        #expect(themed.startingColor(for: .keys, tone: .dark) == ThemeColor(0x36F9F6))
+        // The stand-ins read at 4.5:1 on the window background.
+        for tone in ThemeTone.allCases {
+            #expect(ThemeReference.secondaryLabel(tone).contrast(with: ThemeReference.windowBackground(tone)) >= 4.5)
+            #expect(ThemeReference.label(tone).contrast(with: ThemeReference.windowBackground(tone)) >= 7)
+        }
+    }
+
     @Test func textSizesStayInRange() {
         var sizes = ThemeTextSizes.standard
         #expect(sizes.codeFontSize == 12)
