@@ -101,45 +101,103 @@ public struct ThemeColor: Sendable, Hashable, CustomStringConvertible {
     /// reaches `minimum` contrast with every one of `backgrounds`. It keeps
     /// its hue, so a raised theme still looks like itself.
     ///
-    /// Both directions are walked in small steps, because with backgrounds
-    /// of different lightness (a dark panel with light wells) the passing
-    /// colors can lie between the ends: neither black nor white passes, yet
-    /// a mid-tone does. The first passing step is refined by bisection.
-    /// When no color on either path passes, the result is the one with the
-    /// best worst-case contrast, never an end that vanishes on one of them.
+    /// Contrast depends only on luminance, so the luminances that pass on
+    /// every background form a few intervals, computed exactly. With
+    /// backgrounds of different lightness (a dark panel with light wells)
+    /// they can lie between the ends: neither black nor white passes, yet a
+    /// mid-tone does. Luminance falls monotonically toward black and rises
+    /// toward white, so each path's nearest passing point is found by
+    /// bisection, and the nearer path wins. When no luminance passes on
+    /// every background, the result has the best worst-case contrast
+    /// instead, never an end that vanishes on one of them.
     public func raisingContrast(to minimum: Double, against backgrounds: [ThemeColor]) -> ThemeColor {
-        let start = worstContrast(against: backgrounds)
-        guard !backgrounds.isEmpty, start < minimum else { return self }
-        let steps = 256
-        var passing: (amount: Double, color: ThemeColor)?
-        var bestEffort = (worst: start, color: self)
+        guard !backgrounds.isEmpty, worstContrast(against: backgrounds) < minimum else { return self }
+        let start = relativeLuminance
+        let feasible = Self.passingLuminances(minimum: minimum, against: backgrounds)
+        var nearest: (amount: Double, color: ThemeColor)?
         for target in [ThemeColor.black, ThemeColor.white] {
-            var failing = 0.0
-            for step in 1...steps {
-                let amount = Double(step) / Double(steps)
-                if let passing, amount >= passing.amount { break }
-                let candidate = target.blended(over: self, opacity: amount)
-                let worst = candidate.worstContrast(against: backgrounds)
-                if worst > bestEffort.worst { bestEffort = (worst, candidate) }
-                guard worst >= minimum else {
-                    failing = amount
-                    continue
+            let darkening = target == .black
+            // The interval the path meets first, and where it meets it.
+            let reachable = feasible.compactMap { interval -> (entry: Double, exit: Double)? in
+                if darkening {
+                    guard interval.lowerBound <= start else { return nil }
+                    return (min(interval.upperBound, start), interval.lowerBound)
                 }
-                var low = failing
-                var high = amount
-                for _ in 0..<24 {
-                    let middle = (low + high) / 2
-                    if target.blended(over: self, opacity: middle).worstContrast(against: backgrounds) >= minimum {
-                        high = middle
-                    } else {
-                        low = middle
-                    }
+                guard interval.upperBound >= start else { return nil }
+                return (max(interval.lowerBound, start), interval.upperBound)
+            }
+            guard let first = darkening ? reachable.max(by: { $0.entry < $1.entry }) : reachable.min(by: { $0.entry < $1.entry }) else { continue }
+            let entry = amount(toward: target, reaching: first.entry)
+            let exit = amount(toward: target, reaching: first.exit)
+            // The entry point passes up to floating-point error; step inside
+            // the interval if it doesn't.
+            var chosen = entry
+            for fraction in [0.0, 0.001, 0.01, 0.1, 0.5] {
+                let amount = entry + (exit - entry) * fraction
+                if target.blended(over: self, opacity: amount).worstContrast(against: backgrounds) >= minimum {
+                    chosen = amount
+                    break
                 }
-                passing = (high, target.blended(over: self, opacity: high))
-                break
+            }
+            if nearest.map({ chosen < $0.amount }) ?? true {
+                nearest = (chosen, target.blended(over: self, opacity: chosen))
             }
         }
-        return passing?.color ?? bestEffort.color
+        if let nearest { return nearest.color }
+
+        // Nothing passes everywhere: aim for the luminance whose worst
+        // contrast is best, which is black, white, or the point between two
+        // neighboring backgrounds where both contrasts are equal.
+        let levels = backgrounds.map(\.relativeLuminance).sorted()
+        let candidates = [0.0, 1.0] + zip(levels, levels.dropFirst()).map { (($0 + 0.05) * ($1 + 0.05)).squareRoot() - 0.05 }
+        func worst(_ luminance: Double) -> Double {
+            levels.map { (max($0, luminance) + 0.05) / (min($0, luminance) + 0.05) }.min() ?? 21
+        }
+        guard let goal = candidates.max(by: { worst($0) < worst($1) }), worst(goal) > worstContrast(against: backgrounds) else { return self }
+        let target = goal <= start ? ThemeColor.black : ThemeColor.white
+        return target.blended(over: self, opacity: amount(toward: target, reaching: goal))
+    }
+
+    /// The luminances that reach `minimum` contrast with every background,
+    /// as disjoint closed intervals within 0...1.
+    static func passingLuminances(minimum: Double, against backgrounds: [ThemeColor]) -> [ClosedRange<Double>] {
+        var intervals: [ClosedRange<Double>] = [0...1]
+        for background in backgrounds {
+            let level = background.relativeLuminance + 0.05
+            // Dark enough at or below this luminance, light enough at or above that one.
+            let darkest = level / minimum - 0.05
+            let lightest = level * minimum - 0.05
+            var allowed: [ClosedRange<Double>] = []
+            if darkest >= 0 { allowed.append(0...min(1, darkest)) }
+            if lightest <= 1 { allowed.append(max(0, lightest)...1) }
+            intervals = intervals.flatMap { interval in
+                allowed.compactMap { part in
+                    let lower = max(interval.lowerBound, part.lowerBound)
+                    let upper = min(interval.upperBound, part.upperBound)
+                    return lower <= upper ? lower...upper : nil
+                }
+            }
+        }
+        return intervals
+    }
+
+    /// How much of `target` blended over this color brings its luminance to
+    /// `luminance`. Luminance is monotonic along the blend, so bisection
+    /// finds it; a luminance past the end returns 1.
+    private func amount(toward target: ThemeColor, reaching luminance: Double) -> Double {
+        let darkening = target.relativeLuminance < relativeLuminance
+        var low = 0.0
+        var high = 1.0
+        for _ in 0..<52 {
+            let middle = (low + high) / 2
+            let level = target.blended(over: self, opacity: middle).relativeLuminance
+            if darkening ? level <= luminance : level >= luminance {
+                high = middle
+            } else {
+                low = middle
+            }
+        }
+        return high
     }
 
     // MARK: Helpers

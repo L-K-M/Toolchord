@@ -93,6 +93,27 @@ import Testing
         #expect(raised != .black && raised != .white)
     }
 
+    @Test func raisingContrastFindsANarrowPassingRange() {
+        // Against black and near-white, only a sliver of grays reaches
+        // 4.5:1 on both: narrower than any fixed sampling step.
+        let backgrounds = [ThemeColor.black, ThemeColor(0xFBFBFB)]
+        let passing = ThemeColor.passingLuminances(minimum: 4.5, against: backgrounds)
+        #expect(passing.count == 1)
+        #expect((passing.first.map { $0.upperBound - $0.lowerBound } ?? 1) < 0.005)
+        let raised = ThemeColor.white.raisingContrast(to: 4.5, against: backgrounds)
+        #expect(raised.worstContrast(against: backgrounds) >= 4.5 - 1e-9)
+    }
+
+    @Test func raisingContrastTakesTheNearerDirection() {
+        // Both black and white pass eventually; white gets there sooner.
+        let background = ThemeColor(0x5E5E5E)
+        let start = ThemeColor(0x242424)
+        let raised = start.raisingContrast(to: 3, against: [background])
+        #expect(raised.contrast(with: background) >= 3 - 1e-9)
+        #expect(raised.relativeLuminance > start.relativeLuminance)
+        #expect(raised.contrast(with: background) < 3.01)
+    }
+
     @Test func raisingContrastLeavesPassingColorsAlone() {
         let color = ThemeColor(0x111111)
         #expect(color.raisingContrast(to: 4.5, against: [.white]) == color)
