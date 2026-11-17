@@ -83,6 +83,16 @@ import Testing
         #expect(raised.relativeLuminance > dim.relativeLuminance)
     }
 
+    @Test func raisingContrastFindsAMidToneBetweenClashingBackgrounds() {
+        // Neither end passes on both black and white, but a mid-gray does.
+        let backgrounds = [ThemeColor.black, ThemeColor.white]
+        #expect(ThemeColor.black.worstContrast(against: backgrounds) < 4.5)
+        #expect(ThemeColor.white.worstContrast(against: backgrounds) < 4.5)
+        let raised = ThemeColor.white.raisingContrast(to: 4.5, against: backgrounds)
+        #expect(raised.worstContrast(against: backgrounds) >= 4.5)
+        #expect(raised != .black && raised != .white)
+    }
+
     @Test func raisingContrastLeavesPassingColorsAlone() {
         let color = ThemeColor(0x111111)
         #expect(color.raisingContrast(to: 4.5, against: [.white]) == color)

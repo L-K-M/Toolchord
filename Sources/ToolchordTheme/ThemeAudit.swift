@@ -48,14 +48,13 @@ public enum ThemeAudit {
         let backdrop = Backdrop(theme: theme, tone: tone, increasedContrast: false, accent: theme[.accent])
         var found: [ContrastIssue] = []
         for role in ThemeColorRole.allCases {
-            guard let minimum = minimum(for: role.kind, increasedContrast: false),
-                  let color = checkedColor(role, in: theme, tone: tone) else { continue }
+            guard let check = check(role, in: theme, tone: tone) else { continue }
             let backgrounds = backdrop.backgrounds(for: role)
-            guard let worst = backgrounds.min(by: { color.contrast(with: $0) < color.contrast(with: $1) }) else { continue }
-            let ratio = color.contrast(with: worst)
+            guard let worst = backgrounds.min(by: { check.ratio(on: $0) < check.ratio(on: $1) }) else { continue }
+            let ratio = check.ratio(on: worst)
             // A hair of tolerance: a ratio computed at exactly the minimum passes.
-            if ratio + 1e-9 < minimum {
-                found.append(ContrastIssue(role: role, tone: tone, foreground: color, background: worst, ratio: ratio, minimum: minimum))
+            if ratio + 1e-9 < check.minimum {
+                found.append(ContrastIssue(role: role, tone: tone, foreground: check.foreground(on: worst), background: worst, ratio: ratio, minimum: check.minimum))
             }
         }
         return found
@@ -122,12 +121,15 @@ public enum ThemeAudit {
         }
         let backdrop = Backdrop(theme: result, tone: tone, increasedContrast: false, accent: result[.accent])
         for role in ThemeColorRole.allCases where role.kind == .text || role.kind == .graphic {
-            guard let minimum = minimum(for: role.kind, increasedContrast: false),
-                  let color = checkedColor(role, in: result, tone: tone) else { continue }
+            guard let check = check(role, in: result, tone: tone),
+                  let minimum = minimum(for: role.kind, increasedContrast: false) else { continue }
             let backgrounds = backdrop.backgrounds(for: role)
-            if color.worstContrast(against: backgrounds) < minimum {
-                result[role] = raised(color, to: minimum, against: backgrounds)
-            }
+            guard backgrounds.contains(where: { check.ratio(on: $0) < check.minimum }) else { continue }
+            // A failing system color becomes a custom one, starting from its
+            // opaque stand-in and held to the custom minimum from then on,
+            // so it is raised that far at once.
+            let start = check.opacity < 1 ? result.startingColor(for: role, tone: tone) : check.color
+            result[role] = raised(start, to: minimum, against: backgrounds)
         }
         return result
     }
@@ -138,6 +140,57 @@ public enum ThemeAudit {
     /// Toolchord's default. Nil when the system draws the role.
     static func checkedColor(_ role: ThemeColorRole, in theme: PaletteTheme, tone: ThemeTone) -> ThemeColor? {
         theme[role] ?? ThemeDefaults.color(role, tone: tone)
+    }
+
+    /// A color the audit checks, drawn at `opacity` over each background
+    /// (1 for a theme's opaque colors), and its minimum.
+    struct Check {
+        let color: ThemeColor
+        let opacity: Double
+        let minimum: Double
+
+        func foreground(on background: ThemeColor) -> ThemeColor {
+            opacity >= 1 ? color : color.blended(over: background, opacity: opacity)
+        }
+
+        func ratio(on background: ThemeColor) -> Double {
+            foreground(on: background).contrast(with: background)
+        }
+    }
+
+    /// What to check for `role`, or nil when there is nothing to check.
+    ///
+    /// Automatic text and secondary text draw the system's label colors,
+    /// which stay legible on the backgrounds the system pairs them with but
+    /// not on a surface or wells the theme draws itself, such as black
+    /// wells in the Light appearance. On such a theme they are checked as
+    /// what the system draws, translucent black or white, at the text
+    /// minimum for text and the graphic minimum for secondary text, since
+    /// Apple designs that near 4:1. Code text, punctuation, and comments
+    /// follow these two and are covered by them. The automatic accent is
+    /// the person's own and can't be known here.
+    static func check(_ role: ThemeColorRole, in theme: PaletteTheme, tone: ThemeTone) -> Check? {
+        guard let minimum = minimum(for: role.kind, increasedContrast: false) else { return nil }
+        if let color = checkedColor(role, in: theme, tone: tone) {
+            return Check(color: color, opacity: 1, minimum: minimum)
+        }
+        guard drawsOwnBackground(theme) else { return nil }
+        switch role {
+        case .text:
+            let label = ThemeReference.systemLabel(tone)
+            return Check(color: label.color, opacity: label.opacity, minimum: textMinimum)
+        case .secondaryText:
+            let label = ThemeReference.systemSecondaryLabel(tone)
+            return Check(color: label.color, opacity: label.opacity, minimum: graphicMinimum)
+        default:
+            return nil
+        }
+    }
+
+    /// Whether text sits on a background the theme chose: a surface color
+    /// that is drawn, or wells.
+    static func drawsOwnBackground(_ theme: PaletteTheme) -> Bool {
+        (theme[.surface] != nil && theme.surfaceOpacity > 0) || theme[.well] != nil
     }
 
     /// Raised past `minimum` and rounded to the 8 bits a theme stores, with

@@ -71,6 +71,36 @@ import Testing
         #expect(roles.isSuperset(of: [.keys, .strings, .numbers, .literals]))
     }
 
+    @Test func automaticTextIsCheckedOnTheThemesOwnBackgrounds() {
+        // Black wells in the Light appearance: the system's dark label
+        // colors would vanish on them, though every custom color passes.
+        let gray = ThemeColor(0x767676)
+        var colors: [ThemeColorRole: ThemeColor] = [.surface: .white, .well: .black]
+        for role in [ThemeColorRole.keys, .strings, .numbers, .literals, .punctuation, .comments, .success, .warning, .failure] {
+            colors[role] = gray
+        }
+        let theme = PaletteTheme(appearance: .light, colors: colors, surfaceOpacity: 1)
+        let issues = ThemeAudit.issues(in: theme)
+        #expect(Set(issues.map(\.role)) == [.text, .secondaryText])
+        #expect(issues.allSatisfy { $0.ratio < 1.1 }, "translucent black vanishes on black")
+        // Raising makes them custom colors. No color reads at 4.5:1 on a
+        // white panel, black wells, and the light selection at once, so
+        // raising gets as close as it can instead of picking black or white.
+        let raised = ThemeAudit.raisingContrast(of: theme)
+        #expect(raised[.text] != nil && raised[.secondaryText] != nil)
+        #expect(ThemeAudit.issues(in: raised).allSatisfy { $0.ratio > 3.5 }, "\(ThemeAudit.issues(in: raised))")
+        // On wells that agree with the appearance, the same colors pass.
+        var agreeing = theme
+        agreeing[.well] = ThemeColor(0xF2F2F2)
+        for role in [ThemeColorRole.keys, .strings, .numbers, .literals, .comments, .success, .warning, .failure] {
+            agreeing[role] = ThemeColor(0x5C5C5C)
+        }
+        #expect(ThemeAudit.issues(in: agreeing).isEmpty, "\(ThemeAudit.issues(in: agreeing))")
+        // System text on system backgrounds stays the system's business.
+        #expect(!ThemeAudit.drawsOwnBackground(PaletteTheme(appearance: .light, surfaceOpacity: 0.6)))
+        #expect(!ThemeAudit.drawsOwnBackground(PaletteTheme(appearance: .light, colors: [.surface: .white])))
+    }
+
     @Test func flagsAPanelThatDisagreesWithTheAppearance() {
         let lightOnDark = PaletteTheme(appearance: .dark, colors: [.surface: ThemeColor(0xFAFAFA)], surfaceOpacity: 1)
         #expect(ThemeAudit.problems(in: lightOnDark).count == 1)

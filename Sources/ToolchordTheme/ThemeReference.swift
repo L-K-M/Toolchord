@@ -41,6 +41,23 @@ public enum ThemeReference {
     /// The selected row is the accent at this opacity over the panel.
     public static let selectionOpacity = 0.22
 
+    /// `NSColor.labelColor` as measured on macOS 27: translucent black or
+    /// white, so it changes with the background it is drawn on.
+    public static func systemLabel(_ tone: ThemeTone) -> (color: ThemeColor, opacity: Double) {
+        switch tone {
+        case .light: (ThemeColor.black, 0.85)
+        case .dark: (ThemeColor.white, 0.85)
+        }
+    }
+
+    /// `NSColor.secondaryLabelColor` as measured on macOS 27.
+    public static func systemSecondaryLabel(_ tone: ThemeTone) -> (color: ThemeColor, opacity: Double) {
+        switch tone {
+        case .light: (ThemeColor.black, 0.5)
+        case .dark: (ThemeColor.white, 0.55)
+        }
+    }
+
     /// An opaque stand-in for the system label color, where the editor
     /// needs a concrete starting color.
     public static func label(_ tone: ThemeTone) -> ThemeColor {

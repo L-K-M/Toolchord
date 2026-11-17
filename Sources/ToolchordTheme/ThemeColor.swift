@@ -101,27 +101,45 @@ public struct ThemeColor: Sendable, Hashable, CustomStringConvertible {
     /// reaches `minimum` contrast with every one of `backgrounds`. It keeps
     /// its hue, so a raised theme still looks like itself.
     ///
-    /// The direction is whichever of black and white contrasts better with
-    /// the backgrounds. Along it, a color that starts below the minimum
-    /// stays below until some point and stays above after it, so a binary
-    /// search finds the smallest step. When even black or white cannot
-    /// reach the minimum (a mid-gray background), the result is that end.
+    /// Both directions are walked in small steps, because with backgrounds
+    /// of different lightness (a dark panel with light wells) the passing
+    /// colors can lie between the ends: neither black nor white passes, yet
+    /// a mid-tone does. The first passing step is refined by bisection.
+    /// When no color on either path passes, the result is the one with the
+    /// best worst-case contrast, never an end that vanishes on one of them.
     public func raisingContrast(to minimum: Double, against backgrounds: [ThemeColor]) -> ThemeColor {
-        guard !backgrounds.isEmpty, worstContrast(against: backgrounds) < minimum else { return self }
-        let target = ThemeColor.black.worstContrast(against: backgrounds) >= ThemeColor.white.worstContrast(against: backgrounds)
-            ? ThemeColor.black : ThemeColor.white
-        guard target.worstContrast(against: backgrounds) >= minimum else { return target }
-        var low = 0.0
-        var high = 1.0
-        for _ in 0..<32 {
-            let middle = (low + high) / 2
-            if target.blended(over: self, opacity: middle).worstContrast(against: backgrounds) >= minimum {
-                high = middle
-            } else {
-                low = middle
+        let start = worstContrast(against: backgrounds)
+        guard !backgrounds.isEmpty, start < minimum else { return self }
+        let steps = 256
+        var passing: (amount: Double, color: ThemeColor)?
+        var bestEffort = (worst: start, color: self)
+        for target in [ThemeColor.black, ThemeColor.white] {
+            var failing = 0.0
+            for step in 1...steps {
+                let amount = Double(step) / Double(steps)
+                if let passing, amount >= passing.amount { break }
+                let candidate = target.blended(over: self, opacity: amount)
+                let worst = candidate.worstContrast(against: backgrounds)
+                if worst > bestEffort.worst { bestEffort = (worst, candidate) }
+                guard worst >= minimum else {
+                    failing = amount
+                    continue
+                }
+                var low = failing
+                var high = amount
+                for _ in 0..<24 {
+                    let middle = (low + high) / 2
+                    if target.blended(over: self, opacity: middle).worstContrast(against: backgrounds) >= minimum {
+                        high = middle
+                    } else {
+                        low = middle
+                    }
+                }
+                passing = (high, target.blended(over: self, opacity: high))
+                break
             }
         }
-        return target.blended(over: self, opacity: high)
+        return passing?.color ?? bestEffort.color
     }
 
     // MARK: Helpers
