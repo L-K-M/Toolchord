@@ -99,7 +99,7 @@ public enum EscapeOutcome: Sendable, Equatable {
 @MainActor
 @Observable
 public final class PaletteSession {
-    public let catalog: [ToolCommand]
+    public private(set) var catalog: [ToolCommand]
     public let limits: ToolLimits
 
     public private(set) var sessionID = UUID()
@@ -118,8 +118,10 @@ public final class PaletteSession {
     public private(set) var chosenOptions: [String: ToolOptions] = [:]
     /// Generated values, such as the UUID on screen, keyed by command ID.
     public private(set) var seeds: [String: String] = [:]
+    /// Explicit script actions are separate from preview evaluation.
+    public private(set) var isPerformingScriptAction = false
 
-    @ObservationIgnored private let commandsByID: [String: ToolCommand]
+    private var commandsByID: [String: ToolCommand]
     @ObservationIgnored private let evaluator: any ToolEvaluating
     @ObservationIgnored private let clipboard: any ClipboardWriting
     @ObservationIgnored private let preferences: any SessionPreferences
@@ -128,6 +130,7 @@ public final class PaletteSession {
     @ObservationIgnored private var selectionIsExplicit = false
     @ObservationIgnored private(set) var revision = 0
     @ObservationIgnored private var evaluationTask: Task<Void, Never>?
+    @ObservationIgnored private var scriptActionTask: Task<ToolResult, Never>?
     /// Two slots: a newer change can start while a superseded evaluation that
     /// cannot stop early finishes, but further changes wait instead of piling on.
     @ObservationIgnored private let evaluationSlots = EvaluationSlots(limit: 2)
@@ -194,7 +197,37 @@ public final class PaletteSession {
         return nil
     }
 
-    public var canCopy: Bool { copyableOutput != nil }
+    public var canCopy: Bool { copyableOutput != nil && !isPerformingScriptAction }
+
+    /// Replaces locally authored commands without retiring the user's input.
+    /// A replacement with the same ID must be evaluated again before copying.
+    public func replaceCatalog(_ commands: [ToolCommand]) {
+        let wasActive = !needsActivation
+        let previous = selectedID
+        var seen = Set<String>()
+        catalog = commands.filter { seen.insert($0.id).inserted }
+        commandsByID = Dictionary(uniqueKeysWithValues: catalog.map { ($0.id, $0) })
+        chosenOptions = chosenOptions.filter { commandsByID[$0.key] != nil }
+        seeds = seeds.filter { commandsByID[$0.key] != nil }
+        lastReady = nil
+        if case .tool(let id) = mode, commandsByID[id] == nil { mode = .search }
+        listing = CommandListing.make(query: query, profile: profile, catalog: catalog, recentIDs: preferences.recentCommandIDs)
+        if let previous, commandsByID[previous] != nil, isInTool || listing.contains(previous) {
+            selectedID = previous
+        } else {
+            selectedID = listing.first
+            selectionIsExplicit = false
+        }
+        if wasActive {
+            selectionDidChange()
+        } else {
+            revision += 1
+            evaluationTask?.cancel()
+            evaluationTask = nil
+            cancelScriptAction()
+            preview = .none
+        }
+    }
 
     /// "Copy JSON & Close" for the selected command and its options.
     public var copyTitle: String {
@@ -356,7 +389,7 @@ public final class PaletteSession {
     /// Copy & Close; Copy without closing keeps the draft.
     @discardableResult
     public func copyPrimary() -> CopyOutcome {
-        guard let output = copyableOutput, let command = selectedCommand else { return .unavailable }
+        guard canCopy, let output = copyableOutput, let command = selectedCommand else { return .unavailable }
         isActionsMenuOpen = false
         guard clipboard.writeText(output.primaryText, sensitivity: output.sensitivity) else {
             post(.error, "Couldn’t copy to the clipboard. Try again.")
@@ -369,7 +402,7 @@ public final class PaletteSession {
     /// Copies one result field and keeps the panel open.
     @discardableResult
     public func copyField(_ fieldID: String) -> CopyOutcome {
-        guard let output = copyableOutput, let field = output.fields.first(where: { $0.id == fieldID && $0.isCopyable }) else {
+        guard canCopy, let output = copyableOutput, let field = output.fields.first(where: { $0.id == fieldID && $0.isCopyable }) else {
             return .unavailable
         }
         guard clipboard.writeText(field.value, sensitivity: output.sensitivity) else {
@@ -384,6 +417,60 @@ public final class PaletteSession {
     /// Shows a confirmation after Copy without closing.
     public func confirmCopiedWithoutClosing() {
         post(.success, "Copied \(selectedCommand.map { $0.copyNoun(options(for: $0.id)) } ?? "result")")
+    }
+
+    /// Call only for a user's action-button or menu-item activation. The
+    /// runtime returns a requested clipboard write; only this session performs
+    /// it, after verifying the input, selected command and session are current.
+    @discardableResult
+    public func performScriptAction(_ actionID: String) async -> CopyOutcome {
+        guard canCopy, let command = selectedCommand,
+              command.scriptActions.contains(where: { $0.id == actionID }) else { return .unavailable }
+        let identity = (session: sessionID, revision: revision)
+        let request = makeRequest(for: command)
+        let previewSensitivity = copyableOutput?.sensitivity ?? .normal
+        let slots = evaluationSlots
+        isActionsMenuOpen = false
+        isPerformingScriptAction = true
+        let operation = Task<ToolResult, Never> {
+            await slots.acquire()
+            defer { slots.release() }
+            guard !Task.isCancelled else { return .cancelled }
+            let worker = Task.detached(priority: .userInitiated) {
+                var request = request
+                request.cancellation = .currentTask
+                return command.performScriptAction(id: actionID, request: request)
+            }
+            return await withTaskCancellationHandler {
+                await worker.value
+            } onCancel: {
+                worker.cancel()
+            }
+        }
+        scriptActionTask = operation
+        let result = await withTaskCancellationHandler {
+            await operation.value
+        } onCancel: {
+            operation.cancel()
+        }
+        guard scriptActionTask == operation else { return .unavailable }
+        scriptActionTask = nil
+        isPerformingScriptAction = false
+        guard !operation.isCancelled, !Task.isCancelled,
+              sessionID == identity.session, revision == identity.revision,
+              selectedID == command.id else { return .unavailable }
+        guard let output = result.output else {
+            post(.error, result.problem ?? "The action did not produce a clipboard value.")
+            return .failed
+        }
+        let sensitivity: ClipboardSensitivity = previewSensitivity == .secret ? .secret : output.sensitivity
+        guard clipboard.writeText(output.primaryText, sensitivity: sensitivity) else {
+            post(.error, "Couldn’t copy to the clipboard. Try again.")
+            return .failed
+        }
+        preferences.recordUse(of: command.id)
+        post(.success, "Copied action result")
+        return .copied
     }
 
     // MARK: - Notices
@@ -416,6 +503,7 @@ public final class PaletteSession {
     public func end() {
         evaluationTask?.cancel()
         evaluationTask = nil
+        cancelScriptAction()
         sessionID = UUID()
         revision += 1
         query = ""
@@ -515,6 +603,7 @@ public final class PaletteSession {
         }
         // Disable copy before scheduling new work.
         revision += 1
+        cancelScriptAction()
         evaluationTask?.cancel()
         evaluationTask = nil
 
@@ -557,5 +646,11 @@ public final class PaletteSession {
     private func publish(_ commandID: String, _ result: ToolResult) {
         lastReady = (commandID, result)
         preview = .ready(result)
+    }
+
+    private func cancelScriptAction() {
+        scriptActionTask?.cancel()
+        scriptActionTask = nil
+        isPerformingScriptAction = false
     }
 }

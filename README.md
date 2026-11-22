@@ -11,7 +11,7 @@ Developer tools a shortcut away. Toolchord is a native macOS palette for the sma
 
 ## What it does
 
-56 commands in 18 tool families, all offline:
+56 built-in commands in 18 tool families, all offline:
 
 - **JSON** — format, minify, and validate without changing a single number or key order; escape and unescape string literals.
 - **XML** — format structure while keeping mixed content and preserved whitespace intact; well-formedness and namespace checks.
@@ -23,6 +23,10 @@ Developer tools a shortcut away. Toolchord is a native macOS palette for the sma
 - **Plain text and Markdown** — strip hidden characters, non-breaking spaces, and smart quotes from copied text; turn HTML or Markdown into readable plain text; render Markdown to HTML.
 
 Paste something and Toolchord suggests the tools that fit it. Every result shows exactly what ⌘↵ will copy, errors point to the line and column, and inspectors give each field its own Copy button.
+
+## Make Custom Tool
+
+Search for **Make Custom Tool** in the palette. Describe what you want, choose **Generate on This Mac**, and run the draft on sample input. Save it to use from search, or reopen it to try a change and update the same tool. You can edit the JavaScript directly and add actions such as copying part of a result. Prompt generation requires an available on-device Apple Intelligence model on macOS 26 or later. Editing and running tools work on macOS 14 or later. See the [JavaScript tool API and example](docs/javascript-tools.md).
 
 ## Privacy
 
@@ -94,13 +98,13 @@ This renders palette states to `build/snapshots` for design review, including on
 
 | Directory | Contents |
 | --- | --- |
-| `Sources/ToolchordCore` | Tool commands, input detection, and search ranking (Foundation and CryptoKit only) |
+| `Sources/ToolchordCore` | JavaScript tool catalog and runtime, input detection, and search ranking |
 | `Sources/ToolchordSession` | The palette draft: selection, evaluation scheduling, and copy gating |
 | `Sources/ToolchordTheme` | The theme model, presets, stored JSON format, and contrast audit (Foundation only) |
 | `Sources/ToolchordMac` | Panel, global shortcut, pasteboard, SwiftUI views, Settings, and the snapshot renderer |
 | `App`, `project.yml` | The app target: Info.plist keys, sandbox entitlements, and the Icon Composer icon |
 
-To add a tool, follow `Sources/ToolchordCore/Tools/HashTools.swift`: declare commands with IDs, aliases, options, a copy noun, and an affinity for detected input, then register the module in `ToolCatalog`.
+To add a bundled tool, declare it in `Sources/ToolchordCore/Scripts/catalog.json`, implement its JavaScript preview, and add fixtures for its behavior. See the [tool API](docs/javascript-tools.md).
 
 ## Documentation
 

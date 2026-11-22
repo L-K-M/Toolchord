@@ -22,11 +22,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let preferences = AppPreferences()
     private let clipboard = SystemClipboard()
     private lazy var model = AppModel(preferences: preferences)
-    private lazy var session = PaletteSession(clipboard: clipboard, preferences: preferences)
+    private let customTools = CustomToolLibrary()
+    private lazy var session = PaletteSession(catalog: ToolCatalog.commands + [CustomToolCatalog.maker], clipboard: clipboard, preferences: preferences)
     private lazy var panelController = PanelController(session: session, clipboard: clipboard)
     private var statusItem: NSStatusItem?
     private var settingsWindow: NSWindow?
     private var welcomeWindow: NSWindow?
+    private var customToolWindow: NSWindow?
+    private var customToolEditor: CustomToolEditorModel?
     private var preferencesObservation: Any?
 
     func applicationWillFinishLaunching(_ notification: Notification) {
@@ -38,8 +41,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         NSApp.setActivationPolicy(.accessory)
         NSApp.mainMenu = MainMenu.make(target: self)
 
-        HotKeyCenter.shared.onPress = { [weak self] in self?.panelController.showOrFocus() }
+        customTools.onChange = { [weak self] commands in self?.session.replaceCatalog(commands) }
+        customTools.reload()
+        HotKeyCenter.shared.onPress = { [weak self] in
+            guard let self else { return }
+            self.panelController.showOrFocus()
+        }
         panelController.settingsHandler = { [weak self] in self?.showSettings() }
+        panelController.customToolHandler = { [weak self] id in self?.showCustomToolEditor(editing: id) }
         model.onShortcutChange = { [weak self] in self?.updateStatusItem() }
         model.registerStoredShortcut()
         model.refreshLoginItem()
@@ -108,6 +117,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             open.title = "Open Toolchord   \(preferences.shortcut.displayString)"
         }
         menu.addItem(open)
+        let makeTool = NSMenuItem(title: "Make Custom Tool…", action: #selector(showCustomToolEditorAction), keyEquivalent: "")
+        makeTool.target = self
+        menu.addItem(makeTool)
         if !model.isShortcutActive {
             let warning = NSMenuItem(title: "Shortcut not active — fix in Settings", action: #selector(showSettingsAction), keyEquivalent: "")
             warning.target = self
@@ -127,8 +139,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     @objc func openPalette() {
         // Let the status menu close before the panel takes key status.
-        DispatchQueue.main.async { [weak self] in self?.panelController.showOrFocus() }
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.panelController.showOrFocus()
+        }
     }
+
+    @objc func showCustomToolEditorAction() { showCustomToolEditor() }
 
     @objc func showSettingsAction() {
         showSettings()
@@ -145,6 +162,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     // MARK: - Windows
+
+    func showCustomToolEditor(editing id: String? = nil) {
+        customTools.reload()
+        if let editor = customToolEditor {
+            editor.selectDocument(id ?? "new")
+            editor.refreshAvailability()
+        } else {
+            let editor = CustomToolEditorModel(library: customTools, editing: id)
+            let window = makeWindow(title: "Make Custom Tool", content: CustomToolEditorView(model: editor))
+            window.styleMask.insert(.resizable)
+            window.setContentSize(NSSize(width: 1020, height: 780))
+            window.contentMinSize = NSSize(width: 820, height: 620)
+            customToolEditor = editor
+            customToolWindow = window
+        }
+        present(customToolWindow)
+    }
 
     func showSettings() {
         if settingsWindow == nil {
@@ -201,9 +235,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
+        if (notification.object as? NSWindow) === customToolWindow {
+            customToolEditor?.clearSample()
+            customToolEditor = nil
+            customToolWindow = nil
+        }
         if (notification.object as? NSWindow) === welcomeWindow {
             preferences.hasCompletedWelcome = true
         }
+    }
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        guard sender === customToolWindow, customToolEditor?.isDirty == true else { return true }
+        let alert = NSAlert()
+        alert.messageText = "Discard your custom tool changes?"
+        alert.informativeText = "Your saved tool stays unchanged. Keep editing to save this draft."
+        alert.addButton(withTitle: "Keep Editing")
+        alert.addButton(withTitle: "Discard Changes")
+        return alert.runModal() == .alertSecondButtonReturn
     }
 }
 
@@ -223,6 +272,9 @@ enum MainMenu {
         let settings = NSMenuItem(title: "Settings…", action: #selector(AppDelegate.showSettingsAction), keyEquivalent: ",")
         settings.target = target
         appMenu.addItem(settings)
+        let makeTool = NSMenuItem(title: "Make Custom Tool…", action: #selector(AppDelegate.showCustomToolEditorAction), keyEquivalent: "")
+        makeTool.target = target
+        appMenu.addItem(makeTool)
         appMenu.addItem(.separator())
         appMenu.addItem(NSMenuItem(title: "Hide Toolchord", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h"))
         appMenu.addItem(NSMenuItem(title: "Quit Toolchord", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))

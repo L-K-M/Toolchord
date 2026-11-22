@@ -49,6 +49,10 @@ Settings ▸ Appearance changes how the palette looks, with a live preview of th
 
 The System appearance follows the Mac with the standard colors. Custom colors pin Light or Dark, since one fixed color can't stay legible in both. Toolchord holds the colors it draws to WCAG 2.x minimums (4.5:1 for text, 3:1 for punctuation and the accent) on every background they sit on, lists failures in Settings, and can raise them. Increase Contrast raises them to 7:1 and 4.5:1, switches a pinned appearance to its high-contrast variant, and outlines wells, the selection, and keycaps. Reduce Transparency, like Increase Contrast, makes a translucent surface solid. Copy Theme and Paste Theme exchange a look as JSON text through the clipboard, which is read only when the person pastes. The [theme contracts](implementation-contracts.md#themes) have the details.
 
+## Custom tools
+
+Make Custom Tool lets people describe or edit a JavaScript tool, run it against sample text, and save or update it in the palette. See the [JavaScript tool contract](javascript-tools.md).
+
 ## Keyboard and clipboard behavior
 
 | Input | Behavior |

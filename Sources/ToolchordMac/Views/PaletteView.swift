@@ -18,6 +18,15 @@ protocol PaletteActions: AnyObject {
     func regenerate()
     func clearInput()
     func openSettings()
+    func makeCustomTool()
+    func editCustomTool(_ id: String)
+    func performScriptAction(_ id: String)
+}
+
+extension PaletteActions {
+    func makeCustomTool() {}
+    func editCustomTool(_ id: String) {}
+    func performScriptAction(_ id: String) {}
 }
 
 /// The palette: search with a live preview, or one tool expanded.
@@ -45,6 +54,10 @@ struct PaletteView: View {
                 Divider()
                 SearchBody(session: session, actions: actions, isNarrow: isNarrow, listWidth: listWidth)
             }
+            if let command = session.selectedCommand, !command.scriptActions.isEmpty {
+                Divider()
+                ScriptActionsBar(session: session, command: command, actions: actions)
+            }
             Divider()
             FooterBar(session: session, actions: actions)
         }
@@ -64,6 +77,30 @@ struct PaletteView: View {
         .onChange(of: session.preview) { _, preview in
             Announcer.announce(preview: preview, session: session)
         }
+    }
+}
+
+private struct ScriptActionsBar: View {
+    let session: PaletteSession
+    let command: ToolCommand
+    let actions: PaletteActions
+
+    var body: some View {
+        ScrollView(.horizontal) {
+            HStack(spacing: 8) {
+                ForEach(command.scriptActions, id: \.id) { action in
+                    Button(action.title) { actions.performScriptAction(action.id) }
+                        .disabled(!session.canCopy)
+                }
+                if session.isPerformingScriptAction {
+                    ProgressView().controlSize(.small)
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+        }
+        .frame(height: 44)
+        .accessibilityLabel("Custom tool buttons")
     }
 }
 

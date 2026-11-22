@@ -39,6 +39,7 @@ public final class PanelController: NSObject, PaletteActions, PaletteCommandHand
 
     /// Opens Settings; set by the app delegate.
     public var settingsHandler: (() -> Void)?
+    var customToolHandler: ((String?) -> Void)?
 
     public var isVisible: Bool { panel.isVisible }
 
@@ -186,6 +187,10 @@ public final class PanelController: NSObject, PaletteActions, PaletteCommandHand
     // MARK: - PaletteActions
 
     func openSelected() {
+        if session.selectedID == CustomToolCatalog.makerID {
+            makeCustomTool()
+            return
+        }
         guard session.selectedCommand != nil else {
             NSSound.beep()
             return
@@ -275,6 +280,20 @@ public final class PanelController: NSObject, PaletteActions, PaletteCommandHand
     func openSettings() {
         dismiss(.system)
         settingsHandler?()
+    }
+
+    func makeCustomTool() {
+        dismiss(.system)
+        customToolHandler?(nil)
+    }
+
+    func editCustomTool(_ id: String) {
+        dismiss(.system)
+        customToolHandler?(id)
+    }
+
+    func performScriptAction(_ id: String) {
+        Task { await session.performScriptAction(id) }
     }
 
     func dismissPanel() {
@@ -372,7 +391,23 @@ public final class PanelController: NSObject, PaletteActions, PaletteCommandHand
             }
         }
 
+        if let command, !command.scriptActions.isEmpty {
+            menu.addItem(.separator())
+            for action in command.scriptActions {
+                menu.addItem(item(action.title, key: "", modifiers: [], enabled: session.canCopy) { [weak self] in
+                    self?.performScriptAction(action.id)
+                })
+            }
+        }
+
+        if let id = command?.id, id.hasPrefix("custom.") {
+            menu.addItem(item("Edit Custom Tool…", key: "", modifiers: [], enabled: true) { [weak self] in
+                self?.editCustomTool(id)
+            })
+        }
+
         menu.addItem(.separator())
+        menu.addItem(item("Make Custom Tool…", key: "", modifiers: [], enabled: true) { [weak self] in self?.makeCustomTool() })
         menu.addItem(item("Settings…", key: ",", modifiers: [.command], enabled: true) { [weak self] in self?.openSettings() })
         menu.addItem(item("Close Panel", key: "w", modifiers: [.command], enabled: true) { [weak self] in self?.dismiss(.completed) })
         return menu

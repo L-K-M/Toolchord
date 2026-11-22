@@ -20,7 +20,7 @@ implementation contracts and research docs. Keep them in step with the code.
   window, SwiftUI for content. **App Sandbox on, no network entitlement** —
   the privacy promise; don't add capabilities casually.
 - `Package.swift` holds the testable library targets: `Sources/ToolchordCore`
-  (tools, input detection, search ranking — Foundation/CryptoKit only),
+  (tools, input detection, search ranking — Foundation, CryptoKit, and JavaScriptCore),
   `Sources/ToolchordSession` (palette draft state), `Sources/ToolchordMac`
   (panel, shortcut, pasteboard, views, Settings), `Sources/ToolchordSnapshots`.
 - `App/` + `project.yml` build the real `.app` through **XcodeGen**:
@@ -51,9 +51,8 @@ README. The release workflow publishes the unsigned
 
 ## Conventions
 
-- One type per file, Swift API Design Guidelines; keep `ToolchordCore` pure
-  and dependency-free so every tool stays unit-testable (see the existing
-  `HashTools.swift` pattern for adding a tool).
+- One type per file, Swift API Design Guidelines; keep tool previews pure and testable.
+  Add tools as JavaScript programs following `docs/javascript-tools.md`.
 - Releases are **unsigned, ad-hoc builds** — no Developer ID, no notarization;
   the release notes tell users to right-click → Open or clear quarantine.
 - `LICENSE` is the Unlicense; the app currently bundles no third-party code.

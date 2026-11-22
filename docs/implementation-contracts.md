@@ -24,6 +24,10 @@ Tool evaluation (`ToolchordCore`) is separate from session state (`ToolchordSess
 - A changed query selects its best match. New input keeps an explicit selection unless the input has suggestions and the selection is not one of them. Arrow navigation is clamped at the ends.
 - Short single-line pasted text that names a command can move into search with **Use Input as Search Text**.
 
+## Custom tools
+
+Preview evaluation and explicit actions share the versioned JavaScript API. An action can request a clipboard write. The session checks that its input, command and revision still match before it commits the write. See the [JavaScript tool contract](javascript-tools.md).
+
 ## Tool contracts
 
 Each command defines its input, diagnostics, primary copy target (named in the footer as **Copy ‹noun› & Close**), and secondary fields.
