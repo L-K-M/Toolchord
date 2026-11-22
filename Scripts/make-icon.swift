@@ -1,9 +1,11 @@
 // Generates App/AppIcon.icon, the Icon Composer document for the app icon:
-// a white ⌘-style glyph over an indigo automatic gradient. Xcode 26+ compiles
+// the menu bar wrench in white over an indigo automatic gradient. Xcode 26+ compiles
 // it into the layered Liquid Glass icon and fallbacks for earlier macOS.
 //
 // Usage: swift Scripts/make-icon.swift
-// Preview: ictool App/AppIcon.icon --export-image --output-file icon.png \
+// Preview with Icon Composer’s bundled ictool:
+// "$(xcode-select -p)/../Applications/Icon Composer.app/Contents/Executables/ictool" \
+//          App/AppIcon.icon --export-image --output-file icon.png \
 //          --platform macOS --rendition Default --width 512 --height 512 --scale 2
 import AppKit
 
@@ -11,7 +13,11 @@ let root = URL(fileURLWithPath: CommandLine.arguments.count > 1 ? CommandLine.ar
 let assets = root.appendingPathComponent("Assets")
 try FileManager.default.createDirectory(at: assets, withIntermediateDirectories: true)
 
-// Glyph layer: 1024×1024, transparent, white glyph centered.
+// Render the menu bar artwork into a padded layer for the app icon.
+let artwork = URL(fileURLWithPath: #filePath)
+    .deletingLastPathComponent().deletingLastPathComponent()
+    .appendingPathComponent("Sources/ToolchordMac/Resources/Wrench.svg")
+guard let wrench = NSImage(contentsOf: artwork) else { fatalError("Could not load " + artwork.path) }
 let size = 1024
 guard let bitmap = NSBitmapImageRep(
     bitmapDataPlanes: nil, pixelsWide: size, pixelsHigh: size, bitsPerSample: 8, samplesPerPixel: 4,
@@ -22,20 +28,9 @@ NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: bitmap)
 NSColor.clear.setFill()
 NSRect(x: 0, y: 0, width: size, height: size).fill()
 
-let glyph = "⌘" as NSString
-var font = NSFont.systemFont(ofSize: 560, weight: .semibold)
-if let rounded = font.fontDescriptor.withDesign(.rounded), let roundedFont = NSFont(descriptor: rounded, size: 560) {
-    font = roundedFont
-}
-let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.white]
-let bounds = glyph.boundingRect(with: NSSize(width: size, height: size), options: [.usesLineFragmentOrigin, .usesDeviceMetrics], attributes: attributes)
-// `draw(at:)` places the line fragment's bottom-left corner, which sits one
-// descender below the baseline that `bounds` is measured from.
-let origin = NSPoint(
-    x: (CGFloat(size) - bounds.width) / 2 - bounds.minX,
-    y: (CGFloat(size) - bounds.height) / 2 - bounds.minY + font.descender
-)
-glyph.draw(at: origin, withAttributes: attributes)
+let glyphSize: CGFloat = 608
+let inset = (CGFloat(size) - glyphSize) / 2
+wrench.draw(in: NSRect(x: inset, y: inset, width: glyphSize, height: glyphSize))
 NSGraphicsContext.restoreGraphicsState()
 
 guard let png = bitmap.representation(using: .png, properties: [:]) else { fatalError("Could not encode PNG") }
