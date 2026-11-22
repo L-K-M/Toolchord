@@ -302,6 +302,12 @@ import Testing
         }
     }
 
+    @Test func orderedListNumbersKeepTheirExactIntegerValues() throws {
+        let input = #"<ol start="9007199254740993"><li>a</li><li value="2.5">b</li><li value="9223372036854775807">c</li><li>d</li></ol>"#
+        #expect(try run("html.plaintext", input).output?.primaryText ==
+            "9007199254740993. a\n9007199254740994. b\n9223372036854775807. c\n9223372036854775807. d")
+    }
+
     @Test func htmlTokenizerAndEntities() throws {
         let examples: [(String, String)] = [
             ("<p title='a > b'>x</p>", "x"),

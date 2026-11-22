@@ -8,7 +8,9 @@ Toolchord is a native macOS command palette for the small tasks developers do
 between edits: format an API response, check when a token expires, decode a
 value, convert a timestamp, generate an ID. Press a global shortcut over any
 app, paste, read the live preview, and press ⌘↵ to copy the result and go
-back to work. Everything runs offline.
+back to work. The palette and JavaScript tools run offline. Make Custom Tool
+can generate with Apple Intelligence, an installed Codex CLI, Claude Code or
+Ollama, or an OpenAI-compatible endpoint chosen by the user.
 
 [`docs/product-plan.md`](docs/product-plan.md) holds scope, panel layout,
 keyboard behavior and acceptance checks; `docs/` carries the design,
@@ -18,9 +20,9 @@ implementation contracts and research docs. Keep them in step with the code.
 
 - **Swift 6**, macOS 14+ (Liquid Glass on macOS 26+). AppKit `NSPanel` for the
   window, SwiftUI for content. **App Sandbox on, no network entitlement** —
-  the privacy promise; don't add capabilities casually.
+  the privacy promise; don't add capabilities casually. External tool generation runs in a private embedded XPC service.
 - `Package.swift` holds the testable library targets: `Sources/ToolchordCore`
-  (tools, input detection, search ranking — Foundation/CryptoKit only),
+  (tools, input detection, search ranking — Foundation, CryptoKit, and JavaScriptCore),
   `Sources/ToolchordSession` (palette draft state), `Sources/ToolchordMac`
   (panel, shortcut, pasteboard, views, Settings), `Sources/ToolchordSnapshots`.
 - `App/` + `project.yml` build the real `.app` through **XcodeGen**:
@@ -43,7 +45,7 @@ implementation contracts and research docs. Keep them in step with the code.
 
 `scripts/build.sh` / `scripts/release.sh` are thin stubs over the shared
 `lkm-build`/`lkm-release` engine (the `release-tool` repo; clone it and run
-`./install.sh`). The build stub requires an engine whose `--capabilities`
+`./install.sh`). The ad-hoc build uses the engine’s assembly hook so Xcode signs each target with its own entitlements. The build stub requires an engine whose `--capabilities`
 includes `BUILD_ADHOC_ENTITLEMENTS` to retain App Sandbox restrictions.
 The release stub generates the project and bumps `project.yml` alongside
 README. The release workflow publishes the unsigned
@@ -51,9 +53,8 @@ README. The release workflow publishes the unsigned
 
 ## Conventions
 
-- One type per file, Swift API Design Guidelines; keep `ToolchordCore` pure
-  and dependency-free so every tool stays unit-testable (see the existing
-  `HashTools.swift` pattern for adding a tool).
+- One type per file, Swift API Design Guidelines; keep tool previews pure and testable.
+  Add tools as JavaScript programs following `docs/javascript-tools.md`.
 - Releases are **unsigned, ad-hoc builds** — no Developer ID, no notarization;
   the release notes tell users to right-click → Open or clear quarantine.
 - `LICENSE` is the Unlicense; the app currently bundles no third-party code.

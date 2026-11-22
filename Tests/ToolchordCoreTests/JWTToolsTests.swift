@@ -2,14 +2,19 @@ import Foundation
 import Testing
 @testable import ToolchordCore
 
+private func tokenSegment(_ text: String) -> String {
+    Data(text.utf8).base64EncodedString().replacingOccurrences(of: "+", with: "-")
+        .replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
+}
+
 @Suite struct JWTToolsTests {
     let now = Date(timeIntervalSince1970: 1_700_000_000)
 
     func command() throws -> ToolCommand { try #require(JWTTools.commands.first { $0.id == "jwt.decode" }) }
 
     func token(_ payload: String, header: String = "{\"alg\":\"HS256\"}", signature: String = "") -> String {
-        Base64Codec.encode(Array(header.utf8), alphabet: .url) + "." +
-        Base64Codec.encode(Array(payload.utf8), alphabet: .url) + "." + signature
+        tokenSegment(header) + "." +
+        tokenSegment(payload) + "." + signature
     }
 
     func run(_ text: String, limits: ToolLimits = .standard, cancellation: CancellationCheck = .never) throws -> ToolResult {
@@ -159,6 +164,12 @@ import Testing
         #expect(try output(token(many)).fields.last?.value.utf8.count == 60_001)
     }
 
+    @Test func diagnosticsReferOnlyToPositionsInTheOriginalToken() throws {
+        let result = try run(token(#"{"\ud800":1}"#))
+        #expect(result == .invalid(ToolDiagnostic(#"Unpaired surrogate “\ud800” can’t be decoded to text."#)))
+        #expect(try output(token("\u{FEFF}{}")).primaryText == "{}")
+    }
+
     @Test func metadata() throws {
         let cmd = try command()
         #expect(cmd.group == .jwt)
@@ -192,8 +203,8 @@ import Testing
 @Suite struct JWTNumericDateRobustnessTests {
     @Test(arguments: ["1e400", "-1e400", "1e-400", "99999999999999999999999999999", "-0", "0.0000000001", "1E+3", "253402300800", "-62135596801", "1.5e9"])
     func extremeExpiryValuesNeverCrash(_ exp: String) throws {
-        let header = Base64Codec.encode(Array(#"{"alg":"none"}"#.utf8), alphabet: .url)
-        let payload = Base64Codec.encode(Array("{\"exp\":\(exp),\"iat\":\(exp),\"nbf\":\(exp)}".utf8), alphabet: .url)
+        let header = tokenSegment(#"{"alg":"none"}"#)
+        let payload = tokenSegment("{\"exp\":\(exp),\"iat\":\(exp),\"nbf\":\(exp)}")
         let command = try #require(JWTTools.commands.first)
         let result = command.run(ToolRequest(input: .text("\(header).\(payload)."), now: Date(timeIntervalSince1970: 1_700_000_000)))
         let output = try #require(result.output, "\(exp): \(result)")

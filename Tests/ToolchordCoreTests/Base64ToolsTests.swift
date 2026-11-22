@@ -20,6 +20,7 @@ import Testing
             #expect(try run(id, input).output?.primaryText == expected)
         }
         #expect(try run("base64.decode", "SGVs\nbG8=", options: ["ignoreWhitespace": "true"]).output?.primaryText == "Hello")
+        #expect(try run("base64.decode", "77u/QQ==").output?.primaryText == "A")
         #expect(try run("base64.decode", "SGVsbG8=").output?.status == "Decoded · 5 bytes")
         #expect(try run("base64.encode", "").output?.status == "Base64")
         #expect(try run("base64url.encode", "").output?.status == "Base64URL")
@@ -48,6 +49,10 @@ import Testing
         ]
         for (id, input, message, location) in fixtures {
             #expect(try run(id, input) == .invalid(ToolDiagnostic(message, at: location)))
+        }
+        // Length and padding can be valid even when a continuation byte is ASCII.
+        for id in ["base64.decode", "base64url.decode"] {
+            #expect(try run(id, "0042") == .invalid(ToolDiagnostic("Decoded bytes are not UTF-8 text.")))
         }
         let wrapped = try run("base64.decode", "AA\r\n%", options: ["ignoreWhitespace": "true"])
         #expect(wrapped == .invalid(ToolDiagnostic("Invalid Base64 character “%”.", at: .init(line: 2, column: 1))))
@@ -80,32 +85,38 @@ import Testing
         let vectors = [("", ""), ("f", "Zg=="), ("fo", "Zm8="), ("foo", "Zm9v"),
                        ("foob", "Zm9vYg=="), ("fooba", "Zm9vYmE="), ("foobar", "Zm9vYmFy")]
         for (text, encoded) in vectors {
-            #expect(Base64Codec.encode(text.utf8, alphabet: .standard) == encoded)
-            #expect(try Base64Codec.decode(encoded, alphabet: .standard).get() == Array(text.utf8))
+            #expect(try run("base64.encode", text).output?.primaryText == encoded)
+            #expect(try run("base64.decode", encoded).output?.primaryText == text)
         }
-        for alphabet in [Base64Codec.Alphabet.standard, .url] {
-            for text in ["Grüezi 👩🏽‍💻 日本語\r\n", "é", "e\u{0301}", "\0", String(repeating: "✓😀", count: 10000)] {
-                let encoded = Base64Codec.encode(text.utf8, alphabet: alphabet)
-                #expect(try Base64Codec.decode(encoded, alphabet: alphabet).get() == Array(text.utf8))
-                let prefix = alphabet == .standard ? "base64" : "base64url"
-                let commandEncoded = try #require(run("\(prefix).encode", text).output?.primaryText)
-                #expect(try run("\(prefix).decode", commandEncoded).output?.primaryText == text)
+        let unicode = ["Grüezi 👩🏽‍💻 日本語\r\n", "é", "e\u{0301}", "\0", String(repeating: "✓😀", count: 10000)]
+        for text in unicode {
+            let expected = Data(text.utf8).base64EncodedString()
+            for family in ["base64", "base64url"] {
+                let encoded = family == "base64" ? expected : urlAlphabet(expected)
+                #expect(try run("\(family).encode", text).output?.primaryText == encoded)
+                #expect(try run("\(family).decode", encoded).output?.primaryText == text)
             }
         }
-        #expect(Base64Codec.decode("AA\r\n%", alphabet: .url, ignoreWhitespace: true) ==
-            .failure(.init(message: "Invalid Base64 character “%”.", offset: 4)))
-        // Foundation provides an independent encoder for every byte value and tail length.
+        // Feed every byte and tail length through the public text decoder.
+        // Binary that cannot be represented as UTF-8 must report that explicitly.
         let binary = Array(UInt8.min...UInt8.max)
         for length in 0...binary.count {
-            let bytes = binary.prefix(length)
-            let standard = Data(bytes).base64EncodedString()
-            let url = standard.replacingOccurrences(of: "+", with: "-")
-                .replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
-            #expect(Base64Codec.encode(bytes, alphabet: .standard) == standard)
-            #expect(Base64Codec.encode(bytes, alphabet: .url) == url)
-            #expect(try Base64Codec.decode(standard, alphabet: .standard).get() == Array(bytes))
-            #expect(try Base64Codec.decode(url, alphabet: .url).get() == Array(bytes))
+            let data = Data(binary.prefix(length))
+            let standard = data.base64EncodedString()
+            for (family, encoded) in [("base64", standard), ("base64url", urlAlphabet(standard))] {
+                let result = try run("\(family).decode", encoded)
+                if let text = String(data: data, encoding: .utf8) {
+                    #expect(result.output?.primaryText == text)
+                } else {
+                    #expect(result == .invalid(ToolDiagnostic("Decoded bytes are not UTF-8 text.")))
+                }
+            }
         }
+    }
+
+    private func urlAlphabet(_ standard: String) -> String {
+        standard.replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
     }
 
     @Test func limitsCancellationAndAffinities() throws {

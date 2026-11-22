@@ -16,9 +16,15 @@ import Testing
         output.fields.first { $0.id == id }?.value
     }
 
-    @Test func uuidV7MatchesRFC9562TestVector() {
+    private func seed(_ id: String, milliseconds: Int64, bytes: [UInt8]) throws -> String {
+        try ScriptRuntime.seed(id: id, source: BundledScripts.sourceFile("uuid"),
+                               context: SeedContext(now: Date(timeIntervalSince1970: Double(milliseconds) / 1000)),
+                               entropy: bytes)
+    }
+
+    @Test func uuidV7MatchesRFC9562TestVector() throws {
         // RFC 9562 Appendix A.6.
-        #expect(UUIDTools.makeUUIDv7(milliseconds: 0x017F_22E2_79B0, randA: 0xCC3, randB: 0x18C4_DC0C_0C07_398F)
+        #expect(try seed("uuid.v7", milliseconds: 0x017F_22E2_79B0, bytes: [0,0,0,0,0,0,0x0c,0xc3,0x18,0xc4,0xdc,0x0c,0x0c,0x07,0x39,0x8f])
             == "017f22e2-79b0-7cc3-98c4-dc0c0c07398f")
     }
 
@@ -30,15 +36,15 @@ import Testing
         #expect(field(value, "compact") == "017f22e279b07cc398c4dc0c0c07398f")
     }
 
-    @Test func uuidV7IgnoresBitsOutsideTheirFields() {
-        let value = UUIDTools.makeUUIDv7(milliseconds: .max, randA: .max, randB: .max)
+    @Test func uuidV7IgnoresBitsOutsideTheirFields() throws {
+        let value = try seed("uuid.v7", milliseconds: 0xffffffffffff, bytes: Array(repeating: 255, count: 16))
         #expect(value == "ffffffff-ffff-7fff-bfff-ffffffffffff")
     }
 
-    @Test func ulidMatchesSpecExamples() {
-        #expect(UUIDTools.makeULID(milliseconds: 0, randomness: Array(repeating: 0, count: 10)) == "00000000000000000000000000")
-        #expect(UUIDTools.makeULID(milliseconds: 1_469_918_176_385, randomness: Array(repeating: 0xFF, count: 10)) == "01ARYZ6S41ZZZZZZZZZZZZZZZZ")
-        #expect(UUIDTools.makeULID(milliseconds: 281_474_976_710_655, randomness: Array(repeating: 0, count: 10)) == "7ZZZZZZZZZ0000000000000000")
+    @Test func ulidMatchesSpecExamples() throws {
+        #expect(try seed("uuid.ulid", milliseconds: 0, bytes: Array(repeating: 0, count: 10)) == "00000000000000000000000000")
+        #expect(try seed("uuid.ulid", milliseconds: 1_469_918_176_385, bytes: Array(repeating: 0xFF, count: 10)) == "01ARYZ6S41ZZZZZZZZZZZZZZZZ")
+        #expect(try seed("uuid.ulid", milliseconds: 281_474_976_710_655, bytes: Array(repeating: 0, count: 10)) == "7ZZZZZZZZZ0000000000000000")
     }
 
     @Test func ulidShowsTimestampAndLowercase() throws {
@@ -68,7 +74,8 @@ import Testing
         let seeds = (0..<100).map { _ in v4.makeSeed!(SeedContext()) }
         #expect(Set(seeds).count == 100)
         for seed in seeds {
-            let bytes = try #require(UUIDTools.parseCanonicalUUID(seed))
+            var uuid = try #require(UUID(uuidString: seed)).uuid
+            let bytes = withUnsafeBytes(of: &uuid) { Array($0) }
             #expect(bytes[6] >> 4 == 4)
             #expect(bytes[8] >> 6 == 0b10)
         }

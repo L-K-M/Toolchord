@@ -1,4 +1,5 @@
 import Foundation
+import JavaScriptCore
 import Testing
 @testable import ToolchordCore
 
@@ -16,24 +17,34 @@ import Testing
         bytes.map { String(format: "%02x", $0) }.joined()
     }
 
-    @Test func zeroBytesMapToTheFirstCharacter() {
-        let zeros = [UInt8](repeating: 0, count: 512)
-        #expect(RandomTools.map(zeros, to: RandomTools.alphanumerics, length: 16) == "AAAAAAAAAAAAAAAA")
-        #expect(RandomTools.map(zeros, to: RandomTools.hexDigits, length: 32) == String(repeating: "0", count: 32))
+    private let letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+    private let hex = "0123456789abcdef"
+
+    private func map(_ bytes: [UInt8], to alphabet: String, length: Int) throws -> String? {
+        let js = try #require(JSContext())
+        js.evaluateScript(try BundledScripts.sourceFile("random"))
+        let value = try #require(js.objectForKeyedSubscript("mapBytes")?.call(withArguments: [bytes, alphabet, length]))
+        return value.isNull ? nil : value.toString()
     }
 
-    @Test func biasedBytesAreRejected() {
+    @Test func zeroBytesMapToTheFirstCharacter() throws {
+        let zeros = [UInt8](repeating: 0, count: 512)
+        #expect(try map(zeros, to: letters, length: 16) == "AAAAAAAAAAAAAAAA")
+        #expect(try map(zeros, to: hex, length: 32) == String(repeating: "0", count: 32))
+    }
+
+    @Test func biasedBytesAreRejected() throws {
         // 255 ≥ 248 (the largest multiple of 62 below 256), so it is skipped.
         let bytes: [UInt8] = [0xFF] + [UInt8](repeating: 0x01, count: 511)
-        #expect(RandomTools.map(bytes, to: RandomTools.alphanumerics, length: 16) == "BBBBBBBBBBBBBBBB")
-        #expect(RandomTools.map([0xFF, 0xFF], to: RandomTools.alphanumerics, length: 1) == nil)
+        #expect(try map(bytes, to: letters, length: 16) == "BBBBBBBBBBBBBBBB")
+        #expect(try map([0xFF, 0xFF], to: letters, length: 1) == nil)
     }
 
     @Test func symbolsAlphabetAndEntropy() throws {
         let seed = try command("random.string").makeSeed!(SeedContext())
         let output = try string(seed: seed, options: ["length": "64", "characters": "symbols"])
         #expect(output.primaryText.unicodeScalars.count == 64)
-        #expect(output.primaryText.unicodeScalars.allSatisfy(RandomTools.symbols.contains))
+        #expect(output.primaryText.unicodeScalars.allSatisfy((letters + "!#$%&()*+,-./:;<=>?@[]^_{|}~").unicodeScalars.contains))
         #expect(output.fields.first { $0.id == "entropy" }?.value == "415 bits")
         #expect(output.status == "64 characters")
         #expect(!output.status.lowercased().contains("password"))
@@ -44,7 +55,7 @@ import Testing
         let result = try command("random.string").run(ToolRequest(input: .none, seed: seed))
         let text = try #require(result.output?.primaryText)
         #expect(text.unicodeScalars.count == 32)
-        #expect(text.unicodeScalars.allSatisfy(RandomTools.alphanumerics.contains))
+        #expect(text.unicodeScalars.allSatisfy(letters.unicodeScalars.contains))
         #expect(result.output?.fields.first?.value == "190 bits")
     }
 
@@ -104,7 +115,8 @@ import Testing
     }
 
     @Test func loremSentencesFollowTheShape() throws {
-        let text = RandomTools.lorem(paragraphs: 3, seed: 7)
+        let result = try command("random.lorem").run(.init(input: .none, options: .init(["length": "three"]), seed: "7"))
+        let text = try #require(result.output?.primaryText)
         for paragraph in text.components(separatedBy: "\n\n") {
             let sentences = paragraph.split(separator: ".").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
             #expect((4...7).contains(sentences.count))

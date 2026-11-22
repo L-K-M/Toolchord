@@ -169,6 +169,20 @@ public struct ToolCommand: Sendable, Identifiable {
         )
     }
 
+    public internal(set) var scriptActions: [ScriptToolAction] = []
+    var scriptActionHandler: (@Sendable (String, ToolRequest) -> ToolResult)?
+
+    /// Returns the requested write as data. Only the session may commit it,
+    /// after checking that the user action still belongs to this revision.
+    public func performScriptAction(id: String, request: ToolRequest) -> ToolResult {
+        guard let handler = scriptActionHandler else { return .unsupported("This tool has no actions.") }
+        if input == .text && request.input.text == nil { return .needsInput("Attach text to use this action.") }
+        guard (request.input.text?.utf8.count ?? 0) <= request.limits.maxInputBytes else { return .tooLarge(request.limits.inputLimitMessage) }
+        var request = request
+        request.options = request.options.resolved(for: options)
+        return handler(id, request)
+    }
+
     public var isGenerator: Bool { input == .none }
 
     /// "Copy JSON & Close".

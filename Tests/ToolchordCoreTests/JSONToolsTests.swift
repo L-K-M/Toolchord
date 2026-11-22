@@ -58,6 +58,7 @@ import Testing
         ("{\r  \"a\": }", "Expected a value, found “}”.", 2, 8),
         (#"{"a":1,}"#, "Remove the trailing comma before “}”.", 1, 7),
         ("[1, ]", "Remove the trailing comma before “]”.", 1, 3),
+        ("[0,🚀]", "Expected a value, found “🚀”.", 1, 4),
         ("[1 2]", "Expected “,” or “]”.", 1, 4),
         (#"{"a":1 "b":2}"#, "Expected “,” or “}”.", 1, 8),
         ("// c\n{}", "Comments aren’t allowed in JSON.", 1, 1),
@@ -113,6 +114,10 @@ import Testing
         }
         #expect(try output("validate", #"{"😀":1,"\ud83d\ude00":2}"#).warnings.count == 1)
         #expect(try output("validate", #"{"\uD800":1,"\ud800":2}"#).warnings.count == 1)
+        let ordinaryNames = #"{"constructor":0,"__proto__":1,"toString":2,"constructor":3}"#
+        let nameWarnings = try output("validate", ordinaryNames).warnings
+        #expect(nameWarnings.count == 1)
+        #expect(nameWarnings.first?.contains("“constructor”") == true)
         // JSON names compare code points, without Unicode normalization.
         #expect(try output("validate", "{\"é\":1,\"e\u{0301}\":2}").warnings.isEmpty)
         #expect(try output("validate", "{\r\n\"é\":1,\r\n\"é\":2}").warnings
@@ -140,8 +145,8 @@ import Testing
         #expect(try output("escapeString", "", options: ["quotes": "false"]).primaryText == "")
         #expect(try output("escapeString", "\u{0000}\u{0008}\u{000C}\n\r\t\u{001F}/é😀\u{2028}\u{2029}").primaryText
                 == #""\u0000\b\f\n\r\t\u001f/é😀\u2028\u2029""#)
-        #expect(JSONText.quote("a\n") == #""a\n""#)
-        #expect(JSONText.quote("a\n", includeQuotes: false) == #"a\n"#)
+        #expect(try output("escapeString", "a\n").primaryText == #""a\n""#)
+        #expect(try output("escapeString", "a\n", options: ["quotes": "false"]).primaryText == #"a\n"#)
     }
 
     @Test func unescapeFixtures() throws {
@@ -202,7 +207,7 @@ import Testing
         }
         let text = String(repeating: "a", count: (1 << 20) + 1)
         #expect(try result("escapeString", text) == .tooLarge(ToolLimits.standard.inputLimitMessage))
-        #expect(JSONText.process("{}", style: .minified, cancellation: CancellationCheck { true }) == .failure(.cancelled))
+        #expect(try result("minify", "{}", cancellation: CancellationCheck { true }) == .cancelled)
     }
 
     @Test func oneMiBDocumentAndRoundTrips() throws {
@@ -221,11 +226,9 @@ import Testing
         }
     }
 
-    @Test func internalAPIRootKinds() throws {
-        for (text, root) in [("{}", JSONText.RootKind.object), ("[]", .array), (#""x""#, .string), ("1", .number), ("null", .literal)] {
-            let processed = try JSONText.process(text, style: .minified).get()
-            #expect(processed.rootKind == root)
-            #expect(processed.text == text)
+    @Test func minifiesEveryRootKind() throws {
+        for text in ["{}", "[]", #""x""#, "1", "null"] {
+            #expect(try output("minify", text).primaryText == text)
         }
     }
 

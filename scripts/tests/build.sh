@@ -22,6 +22,9 @@ if [[ "$*" == --capabilities ]]; then
   exit 0
 fi
 [[ "$*" == --check ]]
+[[ "$BUILD_KIND" == swiftpm ]]
+[[ "$BUILD_SWIFTPM_ASSEMBLE" == scripts/assemble-app.sh ]]
+[[ "$BUILD_PRODUCT_PATH" == build/DerivedData/Build/Products/Release/Toolchord.app ]]
 [[ "$BUILD_ADHOC_ENTITLEMENTS" == App/Toolchord.entitlements ]]
 test -s "$BUILD_ADHOC_ENTITLEMENTS"
 echo 'Build stub checks passed'

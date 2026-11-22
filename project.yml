@@ -21,6 +21,8 @@ targets:
         excludes:
           - "Toolchord.entitlements"
     dependencies:
+      - target: AuthoringProvider
+        embed: true
       - package: ToolchordPackage
         product: ToolchordMac
     settings:
@@ -42,3 +44,22 @@ targets:
         ENABLE_HARDENED_RUNTIME: YES
         ENABLE_APP_SANDBOX: YES
         DEAD_CODE_STRIPPING: YES
+  AuthoringProvider:
+    type: xpc-service
+    platform: macOS
+    sources:
+      - path: ProviderService
+        excludes: [Info.plist]
+    dependencies:
+      - package: ToolchordPackage
+        product: ToolchordProviderHost
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: ch.lkmc.Toolchord.AuthoringProvider
+        INFOPLIST_FILE: ProviderService/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        SKIP_INSTALL: YES
+        ENABLE_APP_SANDBOX: NO
+        ENABLE_HARDENED_RUNTIME: YES
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "-"

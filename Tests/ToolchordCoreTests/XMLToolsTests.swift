@@ -95,7 +95,7 @@ import Testing
             "<?xml version='1.0'?><!--c-->\n<!DOCTYPE totally unfinished\u{1}",
         ] {
             for format in [false, true] {
-                #expect(try run(text, format: format) == .unsupported(XMLSourceParser.doctypeMessage))
+                #expect(try run(text, format: format) == .unsupported("Document type declarations (DOCTYPE) aren’t supported. Toolchord checks well-formedness without loading DTDs or entities."))
             }
         }
     }

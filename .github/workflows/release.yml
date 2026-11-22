@@ -43,7 +43,7 @@ jobs:
       # tests are the only automated quality check — a tag on a broken commit must not
       # publish a release users are offered. Tests live in the SwiftPM package.
       - name: Test (SwiftPM)
-        run: swift test
+        run: swift test --no-parallel
 
       # The .xcodeproj is generated and gitignored; produce it the same way
       # make project / scripts/build.sh do.
@@ -56,17 +56,13 @@ jobs:
             -derivedDataPath "$RUNNER_TEMP/DerivedData" \
             -destination 'generic/platform=macOS' \
             MARKETING_VERSION="$VERSION" CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
-            CODE_SIGNING_ALLOWED=NO | xcbeautify
+            CODE_SIGN_IDENTITY=- | xcbeautify
 
-      - name: Locate & ad-hoc sign the app
+      - name: Locate and verify the ad-hoc signed app
         run: |
           APP=$(find "$RUNNER_TEMP/DerivedData/Build/Products/Release" -maxdepth 1 -name "$APP_NAME.app" -print -quit)
           [ -n "$APP" ] || { echo "::error::built $APP_NAME.app not found under Release products"; exit 1; }
-          codesign --force --deep --sign - --entitlements App/Toolchord.entitlements "$APP"
-          codesign --verify --deep --strict "$APP"
-          codesign -d --entitlements - --xml "$APP" > "$RUNNER_TEMP/signed-entitlements.plist"
-          /usr/libexec/PlistBuddy -c 'Print :com.apple.security.app-sandbox' \
-            "$RUNNER_TEMP/signed-entitlements.plist" | grep -qx true
+          bash scripts/check-signing.sh "$APP"
           echo "APP_PATH=$APP" >> "$GITHUB_ENV"
 
       - name: Package zip + DMG

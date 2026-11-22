@@ -26,6 +26,7 @@ import Testing
         #expect(try run("encode", "a b&c=d/é~").primaryText == "a%20b%26c%3Dd%2F%C3%A9~")
         #expect(try run("encode", "AZaz09-._~!*'()+%").primaryText == "AZaz09-._~%21%2A%27%28%29%2B%25")
         #expect(try run("decode", "a+b%20c%252F").primaryText == "a+b c%2F")
+        #expect(try run("decode", "%EF%BB%BFx").primaryText == "x")
         #expect(try run("decode", "%c3%a9").primaryText == "é")
         #expect(try run("encode", "").primaryText == "")
         #expect(try run("decode", "").primaryText == "")
@@ -104,7 +105,7 @@ import Testing
     }
 
     @Test func invalidUTF8() throws {
-        for text in ["%FF", "%C0%80", "%ED%A0%80", "%E2%9C"] {
+        for text in ["%FF", "%C0%80", "%ED%A0%80", "%E2%9C", "%D3N6", "%E2%41%80", "%F0%90%80%41"] {
             #expect(try invalid("decode", text) == ToolDiagnostic("Decoded bytes are not UTF-8 text."))
             #expect(try invalid("inspect", "x=" + text).message == "Decoded bytes are not UTF-8 text.")
         }

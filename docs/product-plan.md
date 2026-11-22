@@ -49,6 +49,10 @@ Settings ▸ Appearance changes how the palette looks, with a live preview of th
 
 The System appearance follows the Mac with the standard colors. Custom colors pin Light or Dark, since one fixed color can't stay legible in both. Toolchord holds the colors it draws to WCAG 2.x minimums (4.5:1 for text, 3:1 for punctuation and the accent) on every background they sit on, lists failures in Settings, and can raise them. Increase Contrast raises them to 7:1 and 4.5:1, switches a pinned appearance to its high-contrast variant, and outlines wells, the selection, and keycaps. Reduce Transparency, like Increase Contrast, makes a translucent surface solid. Copy Theme and Paste Theme exchange a look as JSON text through the clipboard, which is read only when the person pastes. The [theme contracts](implementation-contracts.md#themes) have the details.
 
+## Custom tools
+
+Make Custom Tool lets people describe or edit a JavaScript tool, try it on sample input, and save or revise it in the palette. The editor offers Apple Intelligence, detected Codex CLI, Claude Code and Ollama installations, and a custom OpenAI-compatible endpoint. Providers can list models and accept a model ID. The authoring service sends the description and, for revisions, the current definition to the selected provider. [JavaScript tool contract](javascript-tools.md)
+
 ## Keyboard and clipboard behavior
 
 | Input | Behavior |
@@ -64,7 +68,7 @@ The System appearance follows the Mac with the standard colors. Custom colors pi
 | **Escape** | Goes back from a tool to search with the draft intact; at the root, dismisses and discards the draft. Input methods get Escape and Return first while composing. |
 | **Tab** | Moves through controls in visible order; ⌥Tab inserts a tab character in the editor. |
 
-Tool input is processed on-device and kept in memory for the panel session only. Dismissal, Copy & Close, switching to another app, screen lock, sleep, user switching, and quitting all clear the draft and retire pending work. Preferences (shortcut, indentation, menu bar icon, recent command IDs, theme, and text sizes) are stored separately and never include payloads, queries, or results. The app runs in the App Sandbox without the network entitlement, so Toolchord itself cannot send pasted data anywhere; results the user copies go to the standard system clipboard, which macOS may share through Universal Clipboard. Generated random strings stay on this Mac and are marked as confidential, which asks clipboard history apps not to keep or show them.
+Tool input is processed on-device and kept in memory for the panel session only. The palette and JavaScript evaluation run in the App Sandbox without the network entitlement, so normal tools process their input locally. When an external generation provider is used, a private embedded XPC helper handles the request; the palette remains sandboxed. Generation sends the author description and current tool definition for revisions, never palette inputs or samples. API keys are stored per endpoint in the macOS Keychain and are never read by the palette process. Dismissal, Copy & Close, switching to another app, screen lock, sleep, user switching, and quitting all clear the draft and retire pending work. Preferences (shortcut, indentation, menu bar icon, recent command IDs, theme, and text sizes) are stored separately and never include payloads, queries, or results. Results the user copies go to the standard system clipboard, which macOS may share through Universal Clipboard. Generated random strings stay on this Mac and are marked as confidential, which asks clipboard history apps not to keep or show them.
 
 ## Implementation
 
