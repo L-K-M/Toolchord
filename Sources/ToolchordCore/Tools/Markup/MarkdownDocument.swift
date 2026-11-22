@@ -267,10 +267,17 @@ enum MarkdownDocument {
             guard let end = a.end, let start = b.start, start > end + 1, end >= 0, start - 1 < blanks.count else { return false }
             return blanks[start - 1] > blanks[end]
         }
-        func visit(_ block: MarkdownBlock) throws {
+        // A script calls this parser from inside a JavaScriptCore stack.
+        // Carry the postorder traversal on the heap, including at maximum depth.
+        var pending: [(MarkdownBlock, Bool)] = [(root, false)]
+        while let (block, visited) = pending.popLast() {
+            if !visited {
+                pending.append((block, true))
+                for child in block.children.reversed() { pending.append((child, false)) }
+                continue
+            }
             if request.cancellation.isCancelled { throw MarkupFailure.cancelled }
             for child in block.children {
-                try visit(child)
                 if let start = child.start { block.start = min(block.start ?? start, start) }
                 if let end = child.end { block.end = max(block.end ?? end, end) }
             }
@@ -311,7 +318,6 @@ enum MarkdownDocument {
             default: break
             }
         }
-        try visit(root)
         return root
     }
 }

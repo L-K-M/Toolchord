@@ -5,7 +5,7 @@ import PackageDescription
 // without AppKit:
 //
 // - ToolchordCore: tool commands, input detection, and search ranking.
-//   Foundation and CryptoKit only.
+//   Foundation, CryptoKit, and the system JavaScriptCore runtime.
 // - ToolchordSession: the palette's in-memory draft, evaluation scheduling,
 //   and copy gating. No AppKit.
 // - ToolchordTheme: the theme model, presets, the stored JSON format, and
@@ -19,6 +19,7 @@ let package = Package(
     name: "Toolchord",
     platforms: [.macOS(.v14)],
     products: [
+        .executable(name: "toolchord-script-runner", targets: ["ToolchordScriptRunner"]),
         .library(name: "ToolchordCore", targets: ["ToolchordCore"]),
         .library(name: "ToolchordSession", targets: ["ToolchordSession"]),
         .library(name: "ToolchordTheme", targets: ["ToolchordTheme"]),
@@ -26,7 +27,8 @@ let package = Package(
         .executable(name: "toolchord-snapshots", targets: ["ToolchordSnapshots"]),
     ],
     targets: [
-        .target(name: "ToolchordCore"),
+        .target(name: "ToolchordCore", resources: [.copy("Scripts")]),
+        .executableTarget(name: "ToolchordScriptRunner", dependencies: ["ToolchordCore"]),
         .target(name: "ToolchordSession", dependencies: ["ToolchordCore"]),
         .target(name: "ToolchordTheme"),
         .target(name: "ToolchordMac", dependencies: ["ToolchordCore", "ToolchordSession", "ToolchordTheme"]),
