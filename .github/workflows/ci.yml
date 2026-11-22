@@ -78,17 +78,14 @@ jobs:
             -configuration Release \
             -derivedDataPath "$RUNNER_TEMP/DerivedData" \
             -destination 'generic/platform=macOS' \
-            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGN_IDENTITY=- \
             build | xcbeautify
 
-      - name: Sign and verify App Sandbox restrictions
+      - name: Verify palette and provider signatures
         run: |
           APP="$RUNNER_TEMP/DerivedData/Build/Products/Release/Toolchord.app"
-          codesign --force --deep --sign - --entitlements App/Toolchord.entitlements "$APP"
-          codesign --verify --deep --strict "$APP"
-          codesign -d --entitlements - --xml "$APP" > "$RUNNER_TEMP/signed-entitlements.plist"
-          /usr/libexec/PlistBuddy -c 'Print :com.apple.security.app-sandbox' \
-            "$RUNNER_TEMP/signed-entitlements.plist" | grep -qx true
+          bash scripts/check-signing.sh "$APP"
+          bash scripts/tests/provider-app.sh "$APP"
 
       # Third-Party-Notices.txt becomes mandatory in the built app as soon as the
       # repo commits one; until the app bundles third-party content there is

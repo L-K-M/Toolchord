@@ -26,11 +26,13 @@ Paste something and Toolchord suggests the tools that fit it. Every result shows
 
 ## Make Custom Tool
 
-Search for **Make Custom Tool** in the palette. Describe what you want, choose **Generate on This Mac**, and run the draft on sample input. Save it to use from search, or reopen it to try a change and update the same tool. You can edit the JavaScript directly and add actions such as copying part of a result. Prompt generation requires an available on-device Apple Intelligence model on macOS 26 or later. Editing and running tools work on macOS 14 or later. See the [JavaScript tool API and example](docs/javascript-tools.md).
+Search for **Make Custom Tool** in the palette. Describe what you want, choose a provider and model, then run the generated JavaScript on a sample. Save the draft to make it searchable, or reopen a saved tool to revise it. You can also edit the JavaScript directly. [JavaScript tool API and example](docs/javascript-tools.md)
+
+Toolchord detects installed **Codex CLI** and **Claude Code** and uses the selected harness’s existing sign-in. Choose **List Models**, type a model ID, or keep the harness default. If **Ollama** is installed, start its server and choose one of its models. For an **OpenAI-compatible endpoint**, enter the API base URL and optionally save a key in macOS Keychain. Apple Intelligence remains available offline on eligible Macs running macOS 26 or later. The other providers and the editor support macOS 14 or later.
 
 ## Privacy
 
-Toolchord processes everything on your Mac. It runs in the App Sandbox **without network access**, so the app itself can't send your input anywhere. It reads the clipboard only when you paste, keeps your input in memory only while the palette is open, and never stores or logs it. Results you copy go to the standard system clipboard, which macOS may share with your other devices through [Universal Clipboard](https://support.apple.com/en-us/102430). Generated random strings are the exception: they stay on this Mac and are marked as confidential, which asks clipboard history apps that follow the [nspasteboard.org](http://nspasteboard.org) convention not to keep or show them.
+The palette and its JavaScript tools run locally in the App Sandbox without network access. Toolchord reads the clipboard only when you paste and keeps the input in memory while the palette is open. If you generate with a CLI or custom endpoint, a separate native service sends the tool description and, for a revision, the current definition to the provider you chose. Samples and palette input stay local. Each endpoint has its own Keychain credential. Results you copy go to the standard system clipboard, which macOS may share with your other devices through [Universal Clipboard](https://support.apple.com/en-us/102430). Generated random strings are the exception: they stay on this Mac and are marked as confidential, which asks clipboard history apps that follow the [nspasteboard.org](http://nspasteboard.org) convention not to keep or show them.
 
 ## Requirements
 

@@ -31,4 +31,35 @@ if ! "$BIN" --capabilities 2>/dev/null | grep -qx 'BUILD_ADHOC_ENTITLEMENTS'; th
   echo "error: update lkm-build from https://github.com/L-K-M/release-tool and run ./install.sh (App Sandbox support required)" >&2
   exit 1
 fi
-exec "$BIN" "$@"
+# Xcode must sign the palette and its XPC service with their own settings.
+# The shared engine's default ad-hoc path applies the palette entitlements
+# recursively, preventing the provider from using the user's CLI installation.
+mode=${BUILD_SIGN_MODE:-adhoc}
+if [[ -n ${CODE_SIGN_IDENTITY:-} && -n ${DEVELOPMENT_TEAM:-} ]]; then mode=developer-id; fi
+for arg in "$@"; do
+  case "$arg" in
+    --dev|--developer-id|--adhoc) mode=${arg#--} ;;
+    --) break ;;
+  esac
+done
+if [[ "$mode" != adhoc ]]; then exec "$BIN" "$@"; fi
+
+# Use the engine's custom assembly hook, retaining its install/package/reveal
+# steps. Forward version overrides to xcodebuild in the assembly script.
+config=Release
+args=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --debug) config=Debug; args+=("$1") ;;
+    --app-version) export TOOLCHORD_APP_VERSION="${2:?--app-version needs a value}"; shift ;;
+    --build) export TOOLCHORD_BUILD_NUMBER="${2:?--build needs a value}"; shift ;;
+    --) args+=("$@"); break ;;
+    *) args+=("$1") ;;
+  esac
+  shift
+done
+export BUILD_KIND=swiftpm
+export BUILD_SWIFTPM_ASSEMBLE=scripts/assemble-app.sh
+export BUILD_PRODUCT_PATH="$BUILD_DERIVED_DATA/Build/Products/$config/Toolchord.app"
+export BUILD_CLEAN_PATHS="$BUILD_DERIVED_DATA dist"
+exec "$BIN" ${args[@]+"${args[@]}"}

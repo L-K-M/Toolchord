@@ -79,20 +79,7 @@ struct CustomToolEditorView: View {
                 .frame(height: 65)
                 .border(.separator)
                 .accessibilityLabel("Describe the custom tool")
-            HStack {
-                Button("Generate on This Mac") { model.generate() }
-                    .disabled(model.isBusy || model.description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.unavailableReason != nil)
-                Spacer()
-                Button("Check Availability") { model.refreshAvailability() }
-                    .help("Refresh the on-device model status")
-                    .disabled(model.isBusy)
-            }
-            if let reason = model.unavailableReason {
-                Text(reason).font(.caption).foregroundStyle(.secondary)
-            } else {
-                Text("Apple Intelligence drafts the tool on this Mac. Review and try the result before saving.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
+            AuthoringProviderControls(model: model)
             TextField("Tool title", text: $model.definition.title)
                 .textFieldStyle(.roundedBorder)
             TextField("Summary", text: $model.definition.summary)

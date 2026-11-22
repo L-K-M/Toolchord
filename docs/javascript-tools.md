@@ -1,8 +1,15 @@
 # JavaScript tools
 
-Open the palette, search for **Make Custom Tool**, and press Return. Describe the operation, choose **Generate on This Mac**, and try the draft with sample input. Inspect the preview and any action outputs before saving. The saved title becomes searchable immediately. Reopen the editor and select the existing tool to revise it under the same ID. You can also edit its JavaScript directly.
+Search for **Make Custom Tool** in the palette. Describe the tool, choose its generation provider, and run the draft on sample input. Inspect the preview and any action outputs before saving. The saved title becomes searchable immediately. Select the same tool in the editor to revise it. You can also edit its JavaScript directly.
 
-Prompt generation uses Apple’s on-device Foundation Models framework on an eligible Mac running macOS 26 or later with Apple Intelligence enabled and the model ready. Hand editing, testing, saving, and running tools work on macOS 14 or later. Generated code can misunderstand a request. Try representative input, including an empty value or an unusual character that matters to the operation.
+| Provider | Setup and model choice |
+| --- | --- |
+| Apple Intelligence | Available offline on eligible Macs with Apple Intelligence enabled on macOS 26 or later. |
+| Codex CLI or Claude Code | Install and sign in to the CLI, then use the refresh button in the editor. Choose **List Models**, enter a model ID, or leave the field empty for the harness default. The CLI must support noninteractive text generation with its tools disabled. |
+| Ollama | Start the Ollama server on this Mac, choose **List Models**, and select a model. Toolchord connects over loopback. Ollama may forward requests for a cloud-backed model. |
+| Custom endpoint | Enter the OpenAI-compatible base URL, such as `https://example.com/v1` or `http://127.0.0.1:11434/v1`. Choose **Use Address**. Save an optional bearer key, then list models or enter one. Toolchord uses `GET /models` and `POST /chat/completions` relative to that base. |
+
+The editor remembers model choices by provider and endpoint. The native authoring service stores each endpoint’s key in macOS Keychain. Generating with an external provider sends your description and the current definition when revising. Sample inputs, trial results, and palette contents stay on the Mac. CLI and endpoint generation, hand editing, testing and saving work on macOS 14 or later.
 
 ## API version 1
 
@@ -87,4 +94,4 @@ A Markdown tree has a `nodes` array in breadth-first order. Read the root at ind
 
 The catalog in `Sources/ToolchordCore/Scripts/catalog.json` stores command IDs, display order, search terms, suggestion rules and option definitions. Its script names select JavaScript resources in the same directory. For a family with shared JavaScript libraries, list their basenames in the manifest’s `libraries` object in load order. The runtime runs the bundled preview or generator function with the same argument and result conventions as a local tool. The app runs its signed bundled code directly and isolates editable code in a separate process.
 
-Run `make test` for tool fixtures, session behavior, the worker and editor/store tests. To exercise prompt generation with a real installed model, run `TOOLCHORD_TEST_LOCAL_MODEL=1 swift test --filter LiveAuthoringTests` on a compatible Mac. That check generates a tool, tries it on a sample, saves it, asks the model to revise it, and runs the reloaded definition.
+Run `make test` for tool fixtures, session behavior, the worker and editor/store tests. To exercise prompt generation with a real installed Apple Intelligence model, run `TOOLCHORD_TEST_LOCAL_MODEL=1 swift test --filter LiveAuthoringTests` on a compatible Mac. That check generates a tool, tries it on a sample, saves it, asks the model to revise it, and runs the reloaded definition.

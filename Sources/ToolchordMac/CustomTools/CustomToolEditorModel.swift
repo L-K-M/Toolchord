@@ -6,6 +6,7 @@ import ToolchordCore
 @Observable
 final class CustomToolEditorModel {
     let library: CustomToolLibrary
+    let providers: AuthoringProviderSettings
     var definition: ScriptToolDefinition { didSet { invalidateTrial() } }
     var actionLines: String { didSet { invalidateTrial() } }
     var allowsClipboardWrite: Bool { didSet { invalidateTrial() } }
@@ -20,9 +21,10 @@ final class CustomToolEditorModel {
     private(set) var isRunningTrial = false
     private(set) var message: String?
     private(set) var isError = false
-    private(set) var unavailableReason: String?
+    private var appleUnavailableReason: String?
     private(set) var expected: ScriptToolDefinition?
-    @ObservationIgnored private let generator: any ScriptGenerating
+    @ObservationIgnored private let appleGenerator: any ScriptGenerating
+    @ObservationIgnored private let externalGenerator: (String, String, String) -> any ScriptGenerating
     @ObservationIgnored private var baseline: Data?
     @ObservationIgnored private var successfulTrial: Data?
     /// Actions tested after a preview use the same captured clock and entropy.
@@ -30,10 +32,16 @@ final class CustomToolEditorModel {
     @ObservationIgnored private var workID = UUID()
     @ObservationIgnored private var workTask: Task<Void, Never>?
 
-    init(library: CustomToolLibrary, generator: any ScriptGenerating = LocalScriptGenerator(), editing id: String? = nil) {
+    init(library: CustomToolLibrary, generator: any ScriptGenerating = LocalScriptGenerator(), editing id: String? = nil,
+         providers: AuthoringProviderSettings = AuthoringProviderSettings(),
+         externalGenerator: @escaping (String, String, String) -> any ScriptGenerating = {
+             ProviderScriptGenerator(provider: $0, endpoint: $1, model: $2)
+         }) {
         self.library = library
-        self.generator = generator
-        unavailableReason = generator.unavailableReason
+        self.providers = providers
+        self.appleGenerator = generator
+        self.externalGenerator = externalGenerator
+        appleUnavailableReason = generator.unavailableReason
         let existing = library.definitions.first { $0.id == id }
         let initial = existing ?? Self.newDefinition()
         expected = existing
@@ -43,6 +51,10 @@ final class CustomToolEditorModel {
         optionsJSON = Self.optionJSON(initial.options)
         regenerateTitle = initial.regenerateTitle ?? ""
         baseline = try? Self.fingerprint(initial)
+    }
+
+    var unavailableReason: String? {
+        providers.selected == .apple ? appleUnavailableReason : providers.generationProblem
     }
 
     var isBusy: Bool { isGenerating || isRunningTrial }
@@ -91,12 +103,19 @@ final class CustomToolEditorModel {
         message = nil
         let id = UUID()
         workID = id
-        let generator = self.generator
+        let selection = providers.selection
+        let generator = selection.provider == .apple ? appleGenerator
+            : externalGenerator(selection.provider.rawValue, selection.endpoint, selection.model)
         let isNew = expected == nil && !hasDefinitionChanges
         workTask = Task { [weak self] in
             do {
                 var generated = try await generator.generate(description: prompt, current: current, isNew: isNew)
                 guard !Task.isCancelled, let self, self.workID == id else { return }
+                guard self.providers.selection == selection else {
+                    self.isGenerating = false
+                    self.report("The provider or model changed. Run Generate again with the current selection.", error: true)
+                    return
+                }
                 // Generation revises content, never the document identity.
                 generated.id = current.id
                 try generated.validate()
@@ -151,7 +170,7 @@ final class CustomToolEditorModel {
         trialResult = nil
     }
 
-    func refreshAvailability() { unavailableReason = generator.unavailableReason }
+    func refreshAvailability() { appleUnavailableReason = appleGenerator.unavailableReason }
 
     /// For tests; UI progress is driven by the observable busy state.
     func waitForIdle() async { await workTask?.value }

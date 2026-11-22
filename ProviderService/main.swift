@@ -1,0 +1,3 @@
+import ToolchordProviderHost
+
+AuthoringProviderService.run()
