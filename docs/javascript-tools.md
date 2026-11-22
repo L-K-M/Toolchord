@@ -65,7 +65,23 @@ function perform(action, input, options, api) {
 
 **The runtime** provides language built-ins such as arrays, maps, BigInt, regular expressions and Date, plus `api.id`, `api.seed`, `api.now` (Unix milliseconds), `api.timeZone` (an identifier), `api.cancelled()`, and `api.limits`. It runs synchronous functions in fresh JavaScriptCore contexts. Browser DOM, Node modules, file access, and network requests are outside this API. A saved or generated tool executes in a disposable worker with a three-second wall-clock budget. The app clears its sample and results when the editor closes. Only tool definitions are saved in the app container under Application Support/Toolchord/Custom Tools.
 
-For operations that rely on platform libraries, use `api.native(name, ...arguments)`. The available operations cover cryptographic digests (`crypto.digest` with algorithm and UTF-8 text), HKDF-SHA256 (`crypto.hkdfHex` with a lowercase hex key, UTF-8 context and byte count), time zone offset (`clock.offsetSeconds` with Unix milliseconds), Unicode text services (including `text.transliterate`, `text.compare`, `text.numericType`), byte count labels (`text.byteCountLabel`), and Foundation’s parsed Markdown document (`markdown.parse`). These operate on supplied values. A script can implement its own algorithms entirely in JavaScript.
+### Native operations
+
+Call `api.native(name, ...args)` from a preview or action. These operations run on the supplied values.
+
+| Name | Arguments | Result |
+| --- | --- | --- |
+| `crypto.digest` | Algorithm (`sha256`, `sha512`, `sha1`, or `md5`), text | Lowercase hexadecimal digest of the UTF-8 bytes. |
+| `crypto.hkdfHex` | Lowercase hexadecimal key, UTF-8 context, output length in bytes (1–4096) | Lowercase hexadecimal HKDF-SHA256 output. |
+| `clock.offsetSeconds` | Unix milliseconds | Seconds east of UTC in the evaluation’s time zone at that instant. |
+| `text.transliterate` | Text | Latin transliteration followed by conversion to ASCII where available. |
+| `text.byteCountLabel` | Text | Display label for its UTF-8 byte count. |
+| `text.compare` | Two strings, case-sensitive boolean | `-1`, `0`, or `1` using numeric ordering. |
+| `text.numericType` | Text | Unicode numeric type of the first scalar as `decimal`, `digit`, `numeric`, or an empty string. |
+| `text.graphemeClasses` | Text | One ASCII marker per extended grapheme, `W` for whitespace and `O` otherwise. |
+| `markdown.parse` | Markdown text | A document tree or an error object with `error` and `message`. |
+
+A Markdown tree has a `nodes` array in breadth-first order. Read the root at index zero. Each node contains its block `kind`, child indices in `children`, and inline `runs`. A run contains `text` and can include a link, image, or formatting flags such as `strong` and `emphasis`. The bundled Markdown tool illustrates how to render every block and run.
 
 ## Bundled tools and verification
 

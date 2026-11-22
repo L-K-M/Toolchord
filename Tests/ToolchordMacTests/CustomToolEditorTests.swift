@@ -148,6 +148,83 @@ import ToolchordCore
         #expect(!FileManager.default.fileExists(atPath: folder.path))
     }
 
+    @Test func buttonTrialsReuseThePreviewSeedAndEvaluationTime() async throws {
+        let folder = directory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let editor = CustomToolEditorModel(library: CustomToolLibrary(store: ScriptToolStore(directoryURL: folder)), generator: UnavailableGenerator())
+        editor.definition.source = """
+        function makeSeed(options, api) { return api.entropy.slice(0, 8).join('-'); }
+        function preview(input, options, api) { return api.seed + '@' + api.now; }
+        function perform(action, input, options, api) { api.clipboard.writeText(preview(input, options, api)); }
+        """
+        editor.regenerateTitle = "Generate Again"
+        editor.actionLines = "copy | Copy Generated Value"
+        editor.allowsClipboardWrite = true
+        editor.runSample()
+        await editor.waitForIdle()
+        let preview = try #require(editor.trialResult?.output?.primaryText)
+        editor.tryAction("copy")
+        await editor.waitForIdle()
+        #expect(editor.trialResult?.output?.primaryText == preview)
+    }
+
+    @Test func typedDescriptionIsProtectedUntilSuccessfulGeneration() async throws {
+        let folder = directory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let store = ScriptToolStore(directoryURL: folder)
+        let original = ScriptToolDefinition(id: "custom.original", title: "Original", source: "function preview(input) { return input; }")
+        try store.save(original, replacing: nil)
+        let library = CustomToolLibrary(store: store)
+        library.reload()
+        let editor = CustomToolEditorModel(library: library, generator: FixedGenerator(definition: original), editing: original.id)
+        editor.description = "Keep the same behavior"
+        #expect(editor.isDirty)
+        editor.selectDocument("new")
+        #expect(editor.documentID == original.id)
+        #expect(editor.description == "Keep the same behavior")
+        editor.generate()
+        await editor.waitForIdle()
+        #expect(!editor.isError)
+        #expect(!editor.isDirty)
+        #expect(editor.description.isEmpty)
+        editor.selectDocument("new")
+        #expect(editor.documentID == "new")
+        let newGenerator = RepairGenerator(repaired: original)
+        let fresh = CustomToolEditorModel(library: library, generator: newGenerator)
+        fresh.description = "Make a new identity transform"
+        fresh.generate()
+        await fresh.waitForIdle()
+        #expect(newGenerator.receivedIsNew == true)
+    }
+
+    @Test func generationCanRepairInvalidSourceWhileTrialAndSaveStillValidate() async throws {
+        let folder = directory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let store = ScriptToolStore(directoryURL: folder)
+        let original = ScriptToolDefinition(id: "custom.original", title: "Original", source: "function preview(input) { return input; }")
+        try store.save(original, replacing: nil)
+        let library = CustomToolLibrary(store: store)
+        library.reload()
+        let generator = RepairGenerator(repaired: original)
+        let editor = CustomToolEditorModel(library: library, generator: generator, editing: original.id)
+        editor.definition.source = "function preview(input) { retun input; }"
+        editor.runSample()
+        await editor.waitForIdle()
+        #expect(editor.isError)
+        #expect(!editor.canSave)
+        editor.save()
+        #expect(try store.load() == [original])
+        editor.description = "Fix the syntax typo in the source"
+        editor.generate()
+        await editor.waitForIdle()
+        #expect(!editor.isError)
+        #expect(generator.receivedSource == "function preview(input) { retun input; }")
+        #expect(editor.definition.source == original.source)
+        editor.runSample()
+        await editor.waitForIdle()
+        #expect(editor.canSave)
+    }
+
     @Test(.enabled(if: ProcessInfo.processInfo.environment["TOOLCHORD_RENDER_CUSTOM_EDITOR"] == "1"))
     func renderEditorForVisualInspection() async throws {
         let folder = directory()
@@ -195,4 +272,18 @@ private struct FixedGenerator: ScriptGenerating {
     let definition: ScriptToolDefinition
     var unavailableReason: String? { nil }
     func generate(description: String, current: ScriptToolDefinition, isNew: Bool) async throws -> ScriptToolDefinition { definition }
+}
+
+@MainActor
+private final class RepairGenerator: ScriptGenerating {
+    let repaired: ScriptToolDefinition
+    private(set) var receivedSource: String?
+    private(set) var receivedIsNew: Bool?
+    var unavailableReason: String? { nil }
+    init(repaired: ScriptToolDefinition) { self.repaired = repaired }
+    func generate(description: String, current: ScriptToolDefinition, isNew: Bool) async throws -> ScriptToolDefinition {
+        receivedSource = current.source
+        receivedIsNew = isNew
+        return repaired
+    }
 }

@@ -60,7 +60,9 @@ struct CustomToolEditorView: View {
                     .foregroundStyle(model.isError ? Color.red : Color.secondary)
                     .textSelection(.enabled)
             } else {
-                Text("Run the current draft successfully on your sample to enable Save. Samples stay in memory.")
+                Text(model.hasPendingDescription
+                     ? "Your description is pending. Generate it, or Revert Changes to discard it."
+                     : "Run the current draft successfully on your sample to enable Save. Samples stay in memory.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }

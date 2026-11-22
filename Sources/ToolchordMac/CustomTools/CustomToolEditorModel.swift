@@ -25,6 +25,8 @@ final class CustomToolEditorModel {
     @ObservationIgnored private let generator: any ScriptGenerating
     @ObservationIgnored private var baseline: Data?
     @ObservationIgnored private var successfulTrial: Data?
+    /// Actions tested after a preview use the same captured clock and entropy.
+    @ObservationIgnored private var previewRequest: (fingerprint: Data, request: ToolRequest)?
     @ObservationIgnored private var workID = UUID()
     @ObservationIgnored private var workTask: Task<Void, Never>?
 
@@ -45,7 +47,8 @@ final class CustomToolEditorModel {
 
     var isBusy: Bool { isGenerating || isRunningTrial }
     var documentID: String { expected?.id ?? "new" }
-    var isDirty: Bool { (try? Self.fingerprint(draft())) != baseline }
+    var hasPendingDescription: Bool { !description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    var isDirty: Bool { hasPendingDescription || hasDefinitionChanges }
     var canSave: Bool { !isBusy && successfulTrial != nil && successfulTrial == (try? fingerprintForTrial()) }
     var draftActions: [ScriptToolAction] { (try? draft().actions) ?? [] }
     var declaredOptions: [ScriptOption] { (try? JSONDecoder().decode([ScriptOption].self, from: Data(optionsJSON.utf8))) ?? [] }
@@ -53,7 +56,10 @@ final class CustomToolEditorModel {
     func selectDocument(_ id: String) {
         guard id != documentID else { return }
         guard !isBusy, !isDirty else {
-            report("Save or Revert your changes before switching tools.", error: true)
+            let message = hasPendingDescription
+                ? "Generate your pending description or Revert Changes before switching tools."
+                : "Save or Revert your changes before switching tools."
+            report(message, error: true)
             return
         }
         load(id == "new" ? nil : library.definitions.first { $0.id == id })
@@ -74,6 +80,7 @@ final class CustomToolEditorModel {
         refreshAvailability()
         guard unavailableReason == nil else { report(unavailableReason ?? "Generation is unavailable.", error: true); return }
         let prompt = description.trimmingCharacters(in: .whitespacesAndNewlines)
+        let submittedDescription = description
         guard !prompt.isEmpty, prompt.utf8.count <= 4096 else {
             report("Describe your tool in 1 to 4,096 bytes of text.", error: true)
             return
@@ -85,7 +92,7 @@ final class CustomToolEditorModel {
         let id = UUID()
         workID = id
         let generator = self.generator
-        let isNew = expected == nil && !isDirty
+        let isNew = expected == nil && !hasDefinitionChanges
         workTask = Task { [weak self] in
             do {
                 var generated = try await generator.generate(description: prompt, current: current, isNew: isNew)
@@ -99,6 +106,7 @@ final class CustomToolEditorModel {
                 self.optionsJSON = Self.optionJSON(generated.options)
                 self.regenerateTitle = generated.regenerateTitle ?? ""
                 self.sampleOptions = [:]
+                if self.description.hasSameUTF8(as: submittedDescription) { self.description = "" }
                 self.isGenerating = false
                 self.report("Draft generated. Run it on your sample before saving.")
             } catch {
@@ -150,6 +158,8 @@ final class CustomToolEditorModel {
 
     private enum TrialMode: Sendable { case preview, action(String) }
 
+    private var hasDefinitionChanges: Bool { (try? Self.fingerprint(draft())) != baseline }
+
     private func runTrial(_ mode: TrialMode) {
         guard !isBusy else { return }
         let current: ScriptToolDefinition
@@ -162,6 +172,12 @@ final class CustomToolEditorModel {
         } catch { report(Self.message(for: error), error: true); return }
         let sample = sampleInput
         let options = sampleOptions
+        let reusedRequest: ToolRequest?
+        switch mode {
+        case .preview: reusedRequest = nil
+        case .action:
+            reusedRequest = previewRequest?.fingerprint == fingerprint ? previewRequest?.request : nil
+        }
         guard sample.utf8.count <= ToolLimits.standard.maxInputBytes else {
             report(ToolLimits.standard.inputLimitMessage, error: true)
             return
@@ -172,15 +188,20 @@ final class CustomToolEditorModel {
         message = nil
         workTask = Task { [weak self] in
             let worker = Task.detached(priority: .userInitiated) {
-                var request = ToolRequest(input: command.input == .none ? .none : .text(sample), options: ToolOptions(options))
-                request.seed = command.makeSeed?(SeedContext(now: request.now, options: request.options.resolved(for: command.options)))
-                request.cancellation = .currentTask
-                switch mode {
-                case .preview: return command.run(request)
-                case .action(let actionID): return command.performScriptAction(id: actionID, request: request)
+                var request = reusedRequest ?? ToolRequest(input: command.input == .none ? .none : .text(sample), options: ToolOptions(options))
+                if reusedRequest == nil {
+                    request.seed = command.makeSeed?(SeedContext(now: request.now, options: request.options.resolved(for: command.options)))
                 }
+                request.cancellation = .currentTask
+                let result: ToolResult
+                switch mode {
+                case .preview: result = command.run(request)
+                case .action(let actionID): result = command.performScriptAction(id: actionID, request: request)
+                }
+                request.cancellation = .never
+                return (result: result, request: request)
             }
-            let result = await withTaskCancellationHandler {
+            let completion = await withTaskCancellationHandler {
                 await worker.value
             } onCancel: {
                 worker.cancel()
@@ -188,10 +209,12 @@ final class CustomToolEditorModel {
             guard !Task.isCancelled, let self, self.workID == id else { return }
             self.isRunningTrial = false
             guard (try? self.fingerprintForTrial()) == fingerprint else { return }
+            let result = completion.result
             self.trialResult = result
             if case .preview = mode {
                 self.trialWasAction = false
                 self.successfulTrial = result.isSuccess ? fingerprint : nil
+                self.previewRequest = result.isSuccess ? (fingerprint, completion.request) : nil
             } else {
                 self.trialWasAction = true
                 if !result.isSuccess { self.successfulTrial = nil }
@@ -219,7 +242,6 @@ final class CustomToolEditorModel {
         }
         let buttonTitle = regenerateTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         current.regenerateTitle = buttonTitle.isEmpty ? nil : buttonTitle
-        try current.validate()
         return current
     }
 
@@ -241,6 +263,7 @@ final class CustomToolEditorModel {
 
     private func invalidateTrial() {
         successfulTrial = nil
+        previewRequest = nil
         trialResult = nil
     }
 
