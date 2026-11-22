@@ -53,6 +53,60 @@ import ToolchordCore
         #expect(try Data(contentsOf: url) == raw)
     }
 
+    @Test func editingReorderingAndRenamingControlsPreservesExtensionsOnlyOnRetainedIDs() throws {
+        let (root, library) = try fixture()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let imported = root.appendingPathComponent("Controls.toolchord")
+        let exported = root.appendingPathComponent("Updated.toolchord")
+        let raw = """
+        {
+          "apiVersion": 1, "id": "custom.controls", "title": "Controls", "summary": "",
+          "source": "function preview(input) { return input; }", "capabilities": ["clipboard.write"],
+          "actions": [
+            {"id":"old","title":"Old","extra":"discard"},
+            {"id":"copy","title":"Copy","extra":"keep"}
+          ],
+          "options": [
+            {"id":"format","label":"Format","defaultValue":"a","extra":{"version":2},"choices":[
+              {"id":"a","label":"A","extension":[1,2]},
+              {"id":"b","label":"B","extension":[3]},
+              {"id":"c","label":"C","extension":[4]}
+            ]},
+            {"id":"flag","label":"Flag","defaultValue":"false","extra":"toggle"},
+            {"id":"removed","label":"Remove","defaultValue":"true","extra":"discard"}
+          ]
+        }
+        """
+        try Data(raw.utf8).write(to: imported)
+        let editor = CustomToolEditorModel(library: library)
+        try editor.openTool(from: imported)
+        editor.actionLines = "copy | Copy Value\nrenamed | Old"
+        editor.optionsJSON = """
+        [
+          {"id":"flag","label":"Renamed Flag","defaultValue":"true"},
+          {"id":"format","label":"Format","defaultValue":"b","choices":[
+            {"id":"b","label":"Renamed B"},{"id":"added","label":"C"},{"id":"a","label":"A"}]},
+          {"id":"new","label":"Remove","defaultValue":"true"}
+        ]
+        """
+        try editor.exportTool(to: exported)
+        let result = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: exported)) as? [String: Any])
+        let actions = try #require(result["actions"] as? [[String: String]])
+        #expect(actions == [["id": "copy", "title": "Copy Value", "extra": "keep"], ["id": "renamed", "title": "Old"]])
+        let options = try #require(result["options"] as? [[String: Any]])
+        #expect(options.compactMap { $0["id"] as? String } == ["flag", "format", "new"])
+        #expect(options[0]["label"] as? String == "Renamed Flag")
+        #expect(options[0]["extra"] as? String == "toggle")
+        #expect(options[1]["extra"] as? [String: Int] == ["version": 2])
+        #expect(options[2]["extra"] == nil)
+        let choices = try #require(options[1]["choices"] as? [[String: Any]])
+        #expect(choices.compactMap { $0["id"] as? String } == ["b", "added", "a"])
+        #expect(choices[0]["label"] as? String == "Renamed B")
+        #expect(choices[0]["extension"] as? [Int] == [3])
+        #expect(choices[1]["extension"] == nil)
+        #expect(choices[2]["extension"] as? [Int] == [1, 2])
+    }
+
     @Test func anImportedToolKeepsItsFileAndIdentityThroughRecoveryAndRevertUndo() throws {
         let (root, library) = try fixture()
         defer { try? FileManager.default.removeItem(at: root) }

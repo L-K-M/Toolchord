@@ -14,6 +14,8 @@ final class ToolEditorWindow: NSWindowController, NSWindowDelegate, NSToolbarDel
     let editor: CustomToolEditorModel
     private let workspace = CustomToolWorkspace()
     private let didClose: () -> Void
+    private var pendingFiles: [URL] = []
+    private var isOpeningFile = false
 
     init(library: CustomToolLibrary, didClose: @escaping () -> Void) {
         editor = CustomToolEditorModel(library: library)
@@ -50,6 +52,7 @@ final class ToolEditorWindow: NSWindowController, NSWindowDelegate, NSToolbarDel
     required init?(coder: NSCoder) { fatalError() }
 
     func windowWillClose(_ notification: Notification) {
+        pendingFiles.removeAll()
         editor.flushRecovery()
         editor.clearSample()
         didClose()
@@ -74,8 +77,8 @@ final class ToolEditorWindow: NSWindowController, NSWindowDelegate, NSToolbarDel
     }
 
     func confirmLeaving(_ completion: @escaping (Bool) -> Void) {
-        guard editor.isDirty else { completion(true); return }
         guard let window, window.attachedSheet == nil else { completion(false); return }
+        guard editor.isDirty else { completion(true); return }
         let alert = NSAlert()
         alert.messageText = "Save changes to “\(editor.definition.title)”?"
         alert.informativeText = editor.hasPendingDescription
@@ -109,13 +112,35 @@ final class ToolEditorWindow: NSWindowController, NSWindowDelegate, NSToolbarDel
     }
 
     func open(_ url: URL) {
+        guard !pendingFiles.contains(url) else { return }
+        pendingFiles.append(url)
+        openNextFile()
+    }
+
+    func windowDidEndSheet(_ notification: Notification) {
+        // Let the save panel export its original draft or the alert finish
+        // resolving unsaved changes before a waiting Finder open changes it.
+        DispatchQueue.main.async { [weak self] in self?.openNextFile() }
+    }
+
+    private func openNextFile() {
+        guard !isOpeningFile, let url = pendingFiles.first,
+              let window, window.attachedSheet == nil else { return }
+        isOpeningFile = true
         confirmLeaving { [weak self] proceed in
-            guard proceed, let self else { return }
-            do {
-                editor.cancelWork()
-                try editor.openTool(from: url)
-                NSDocumentController.shared.noteNewRecentDocumentURL(url)
-            } catch { showFileError(error) }
+            guard let self, pendingFiles.first == url else { return }
+            if proceed {
+                do {
+                    editor.cancelWork()
+                    try editor.openTool(from: url)
+                    NSDocumentController.shared.noteNewRecentDocumentURL(url)
+                } catch { showFileError(error) }
+            }
+            pendingFiles.removeFirst()
+            isOpeningFile = false
+            if !pendingFiles.isEmpty {
+                DispatchQueue.main.async { [weak self] in self?.openNextFile() }
+            }
         }
     }
 

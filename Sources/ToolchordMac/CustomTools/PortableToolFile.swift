@@ -49,24 +49,46 @@ struct PortableToolFile {
         let after = try Self.encode(current)
         guard before != after else { return original }
 
-        // Replace only edited schema fields. Other top-level metadata and
-        // nested option metadata in unedited fields survive a normal edit.
-        guard var document = try JSONSerialization.jsonObject(with: original) as? [String: Any],
-              let previous = try JSONSerialization.jsonObject(with: before) as? [String: NSObject],
-              let edited = try JSONSerialization.jsonObject(with: after) as? [String: NSObject] else {
+        guard let document = try JSONSerialization.jsonObject(with: original) as? JSONObject,
+              let previous = try JSONSerialization.jsonObject(with: before) as? JSONObject,
+              let edited = try JSONSerialization.jsonObject(with: after) as? JSONObject else {
             throw ToolDiagnostic("The tool document must contain a JSON object.")
         }
-        // Foundation string equality treats some distinct UTF-8 spellings
-        // as equal; compare the encoded field so an explicit edit survives.
-        func field(_ object: NSObject?) throws -> Data? {
-            try object.map { try JSONSerialization.data(withJSONObject: $0, options: [.fragmentsAllowed, .sortedKeys]) }
-        }
-        for key in Set(previous.keys).union(edited.keys) {
-            if try field(previous[key]) != field(edited[key]) {
-                document[key] = edited[key]
+        let merged = try Self.merge(original: document, previous: previous, edited: edited)
+        return try JSONSerialization.data(withJSONObject: merged, options: [.sortedKeys, .prettyPrinted])
+    }
+
+    private typealias JSONObject = [String: Any]
+
+    private static func merge(original: JSONObject, previous before: JSONObject, edited after: JSONObject) throws -> JSONObject {
+        var result = original
+        for key in Set(before.keys).union(after.keys) {
+            guard try fieldBytes(before[key]) != fieldBytes(after[key]) else { continue }
+            if let rows = original[key] as? [JSONObject],
+               let oldRows = before[key] as? [JSONObject],
+               let newRows = after[key] as? [JSONObject] {
+                // Actions, options and choices each identify their own members.
+                // Follow the edited order. A new ID starts without the removed
+                // item's extensions, even when it occupies the same position.
+                result[key] = try newRows.map { row in
+                    guard let id = row["id"] as? String,
+                          let source = rows.first(where: { ($0["id"] as? String)?.hasSameUTF8(as: id) == true }),
+                          let prior = oldRows.first(where: { ($0["id"] as? String)?.hasSameUTF8(as: id) == true }) else {
+                        return row
+                    }
+                    return try merge(original: source, previous: prior, edited: row)
+                }
+            } else {
+                result[key] = after[key]
             }
         }
-        return try JSONSerialization.data(withJSONObject: document, options: [.sortedKeys, .prettyPrinted])
+        return result
+    }
+
+    // Compare encoded fields because Foundation string equality folds some
+    // distinct UTF-8 spellings that an explicit edit may intend to change.
+    private static func fieldBytes(_ value: Any?) throws -> Data? {
+        try value.map { try JSONSerialization.data(withJSONObject: $0, options: [.fragmentsAllowed, .sortedKeys]) }
     }
 
     static func encode(_ definition: ScriptToolDefinition) throws -> Data {

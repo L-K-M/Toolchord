@@ -15,13 +15,13 @@ struct LocalScriptGenerator: ScriptGenerating {
         switch SystemLanguageModel.default.availability {
         case .available: return nil
         case .unavailable(.deviceNotEligible):
-            return "This Mac doesn’t support Apple Intelligence. You can edit the JavaScript below."
+            return "This Mac doesn’t support Apple Intelligence. You can edit the JavaScript in the Script tab."
         case .unavailable(.appleIntelligenceNotEnabled):
-            return "Turn on Apple Intelligence in System Settings to generate a tool, or edit the JavaScript below."
+            return "Turn on Apple Intelligence in System Settings to generate a tool, or edit the JavaScript in the Script tab."
         case .unavailable(.modelNotReady):
-            return "The on-device model is still getting ready. Try again later, or edit the JavaScript below."
+            return "The on-device model is still getting ready. Try again later, or edit the JavaScript in the Script tab."
         @unknown default:
-            return "The on-device model is unavailable. You can edit the JavaScript below."
+            return "The on-device model is unavailable. You can edit the JavaScript in the Script tab."
         }
     }
 
