@@ -67,8 +67,11 @@ import Testing
         looping.source = "function preview(){while(true){} }"
         let command = try looping.command()
         let task = Task.detached { command.run(.init(input: .text(""), cancellation: .currentTask)) }
-        try await Task.sleep(for: .milliseconds(250))
-        task.cancel()
+        // The synchronous evaluation can occupy the sole cooperative thread
+        // on a small runner. Deliver cancellation independently, as the UI does.
+        DispatchQueue.global().asyncAfter(deadline: .now() + .milliseconds(250)) {
+            task.cancel()
+        }
         let result = await task.value
         #expect(result == .cancelled)
     }
