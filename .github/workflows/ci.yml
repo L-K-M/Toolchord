@@ -60,8 +60,11 @@ jobs:
 
       # Tests live in the SwiftPM package (Tests/), not in the generated project —
       # `make test` is `swift test`.
+      # The hosted runner shares its CPU with real, deadline-limited script
+      # workers. Run cases in sequence so unrelated benchmarks and previews
+      # cannot starve a worker. Concurrency tests still create their own tasks.
       - name: Test (SwiftPM)
-        run: swift test
+        run: swift test --no-parallel
 
       # The .xcodeproj is generated and gitignored; CI must produce it the same
       # way make project / scripts/build.sh do.
