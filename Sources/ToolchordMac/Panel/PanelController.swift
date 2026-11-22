@@ -96,7 +96,7 @@ public final class PanelController: NSObject, PaletteActions, PaletteCommandHand
 
     private func installContent() {
         hostingView = NSHostingView(rootView: makeRootView())
-        surface = PaletteSurface(content: hostingView, blending: .behindWindow)
+        surface = PaletteSurface(content: hostingView)
         panel.contentView = surface.view
     }
 

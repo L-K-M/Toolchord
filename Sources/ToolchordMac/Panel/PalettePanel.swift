@@ -184,7 +184,14 @@ final class PalettePanel: NSPanel {
 /// The search field. Arrow keys, Return, and Escape are handled by its
 /// delegate; Paste is handled by ``SearchFieldEditor``.
 final class SearchTextField: NSTextField {
-    override var acceptsFirstResponder: Bool { true }
+    override var acceptsFirstResponder: Bool { !refusesFirstResponder }
+
+    // A borderless NSTextField has no bezel for AppKit to use as a focus mask.
+    override var focusRingMaskBounds: NSRect { bounds }
+
+    override func drawFocusRingMask() {
+        NSBezierPath(roundedRect: bounds, xRadius: 5, yRadius: 5).fill()
+    }
 }
 
 /// Field editor for the search field: Paste attaches the clipboard text as

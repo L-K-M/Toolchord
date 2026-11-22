@@ -31,7 +31,7 @@ Deferred tools and the reasons are in the [research](research.md#consensus-catal
 
 ## Panel layout
 
-One floating, non-activating panel (760 × 460 points, growing to 600 high for an open tool while keeping its top edge) appears on the display holding the frontmost window, falling back to the pointer's display. It uses Liquid Glass on macOS 26 and later and vibrancy on macOS 14–15, system fonts for controls, monospaced text for payloads, the user's accent color for selection, and works in light and dark appearance with Reduce Motion, Reduce Transparency, and Increase Contrast. That is the default look; a [theme](#themes) can change it.
+One floating, non-activating panel (760 × 460 points, growing to 600 high for an open tool while keeping its top edge) appears on the display holding the frontmost window, falling back to the pointer's display. It uses Liquid Glass, system fonts for controls, monospaced text for payloads, the user's accent color for selection, and works in light and dark appearance with Reduce Motion, Reduce Transparency, and Increase Contrast. That is the default look; a [theme](#themes) can change it.
 
 ### Search with live preview
 

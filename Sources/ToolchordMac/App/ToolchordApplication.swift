@@ -18,7 +18,7 @@ public enum ToolchordApplication {
 }
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDelegate {
     private let preferences = AppPreferences()
     private let clipboard = SystemClipboard()
     private lazy var model = AppModel(preferences: preferences)
@@ -28,9 +28,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var statusItem: NSStatusItem?
     private var settingsWindow: NSWindow?
     private var welcomeWindow: NSWindow?
-    private var customToolWindow: NSWindow?
-    private var customToolEditor: CustomToolEditorModel?
-    private var preferencesObservation: Any?
+    private var workspace: ToolEditorWindow?
+    private var pendingFile: URL?
+    private var finishedLaunching = false
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         // Launch without taking focus from the frontmost app (for example at login).
@@ -57,15 +57,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         observePreferences()
         observeTheme()
 
-        if !preferences.hasCompletedWelcome {
+        finishedLaunching = true
+        if let pendingFile {
+            self.pendingFile = nil
+            openFile(pendingFile)
+        } else if let journal = customTools.recoveryURL, FileManager.default.fileExists(atPath: journal.path) {
+            showCustomToolEditor()
+        } else if !preferences.hasCompletedWelcome {
             showWelcome()
         }
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        // Opening the app again (Finder, Spotlight) shows Settings, which is
-        // the way back when the menu bar icon is hidden.
-        showSettings()
+        if let window = workspace?.window {
+            present(window)
+        } else if welcomeWindow?.isVisible == true {
+            present(welcomeWindow)
+        } else if settingsWindow?.isVisible == true || !preferences.showsMenuBarIcon {
+            showSettings()
+        } else {
+            openPalette()
+        }
         return false
     }
 
@@ -155,7 +167,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         NSApp.activate()
         NSApp.orderFrontStandardAboutPanel(options: [
             .credits: NSAttributedString(
-                string: "Developer tools a shortcut away. Everything runs on this Mac.",
+                string: "Developer tools a shortcut away.",
                 attributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor]
             ),
         ])
@@ -164,20 +176,67 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     // MARK: - Windows
 
     func showCustomToolEditor(editing id: String? = nil) {
+        let controller = openWorkspace()
+        if let id { controller.select(id) }
+    }
+
+    private func openWorkspace() -> ToolEditorWindow {
         customTools.reload()
-        if let editor = customToolEditor {
-            editor.selectDocument(id ?? "new")
-            editor.refreshAvailability()
-        } else {
-            let editor = CustomToolEditorModel(library: customTools, editing: id)
-            let window = makeWindow(title: "Make Custom Tool", content: CustomToolEditorView(model: editor))
-            window.styleMask.insert(.resizable)
-            window.setContentSize(NSSize(width: 1020, height: 780))
-            window.contentMinSize = NSSize(width: 820, height: 620)
-            customToolEditor = editor
-            customToolWindow = window
+        let controller = workspace ?? ToolEditorWindow(library: customTools) { [weak self] in
+            self?.workspace = nil
+            self?.updateActivationAfterClosing()
         }
-        present(customToolWindow)
+        workspace = controller
+        present(controller.window)
+        controller.editor.refreshAvailability()
+        return controller
+    }
+
+    @objc func newTool() { openWorkspace().select("new", forceNew: true) }
+    @objc func openTool() { openWorkspace().chooseFile() }
+
+    // Finder, Open Recent, and drag and drop all edit library working copies.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        guard let url = urls.first else { return }
+        guard urls.count == 1 else {
+            DispatchQueue.main.async { [weak self] in
+                self?.openWorkspace().showFileError(ToolDiagnostic("Choose one tool at a time to review it before adding it to your library."))
+            }
+            return
+        }
+        if finishedLaunching { openFile(url) }
+        else { pendingFile = url }
+    }
+
+    private func openFile(_ url: URL) { openWorkspace().open(url) }
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        menu.removeAllItems()
+        let urls = NSDocumentController.shared.recentDocumentURLs
+        for url in urls {
+            let item = menu.addItem(withTitle: url.lastPathComponent, action: #selector(openRecent(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = url
+            item.toolTip = url.path
+        }
+        if !urls.isEmpty { menu.addItem(.separator()) }
+        let clear = menu.addItem(withTitle: "Clear Menu", action: #selector(NSDocumentController.clearRecentDocuments(_:)), keyEquivalent: "")
+        clear.target = NSDocumentController.shared
+    }
+
+    @objc private func openRecent(_ item: NSMenuItem) {
+        if let url = item.representedObject as? URL { openFile(url) }
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard let workspace, workspace.editor.isDirty else { return .terminateNow }
+        guard workspace.window?.attachedSheet == nil else {
+            workspace.window?.attachedSheet?.makeKeyAndOrderFront(nil)
+            return .terminateCancel
+        }
+        present(workspace.window)
+        workspace.confirmLeaving { proceed in sender.reply(toApplicationShouldTerminate: proceed) }
+        return .terminateLater
     }
 
     func showSettings() {
@@ -230,76 +289,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func present(_ window: NSWindow?) {
         guard let window else { return }
         if panelController.isVisible { panelController.dismiss(.system) }
+        NSApp.setActivationPolicy(.regular)
+        if window.isMiniaturized { window.deminiaturize(nil) }
         NSApp.activate()
         window.makeKeyAndOrderFront(nil)
     }
 
     func windowWillClose(_ notification: Notification) {
-        if (notification.object as? NSWindow) === customToolWindow {
-            customToolEditor?.clearSample()
-            customToolEditor = nil
-            customToolWindow = nil
-        }
         if (notification.object as? NSWindow) === welcomeWindow {
             preferences.hasCompletedWelcome = true
+            welcomeWindow = nil
         }
+        updateActivationAfterClosing()
     }
 
-    func windowShouldClose(_ sender: NSWindow) -> Bool {
-        guard sender === customToolWindow, customToolEditor?.isDirty == true else { return true }
-        let alert = NSAlert()
-        alert.messageText = "Discard your custom tool changes?"
-        alert.informativeText = "Your saved tool stays unchanged. Keep editing to save this draft."
-        alert.addButton(withTitle: "Keep Editing")
-        alert.addButton(withTitle: "Discard Changes")
-        return alert.runModal() == .alertSecondButtonReturn
-    }
-}
-
-/// The main menu, used while Settings or the welcome window is active, so
-/// standard editing shortcuts work in their text fields.
-@MainActor
-enum MainMenu {
-    static func make(target: AppDelegate) -> NSMenu {
-        let main = NSMenu()
-
-        let appItem = NSMenuItem()
-        let appMenu = NSMenu(title: "Toolchord")
-        let about = NSMenuItem(title: "About Toolchord", action: #selector(AppDelegate.showAbout), keyEquivalent: "")
-        about.target = target
-        appMenu.addItem(about)
-        appMenu.addItem(.separator())
-        let settings = NSMenuItem(title: "Settings…", action: #selector(AppDelegate.showSettingsAction), keyEquivalent: ",")
-        settings.target = target
-        appMenu.addItem(settings)
-        let makeTool = NSMenuItem(title: "Make Custom Tool…", action: #selector(AppDelegate.showCustomToolEditorAction), keyEquivalent: "")
-        makeTool.target = target
-        appMenu.addItem(makeTool)
-        appMenu.addItem(.separator())
-        appMenu.addItem(NSMenuItem(title: "Hide Toolchord", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h"))
-        appMenu.addItem(NSMenuItem(title: "Quit Toolchord", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
-        appItem.submenu = appMenu
-        main.addItem(appItem)
-
-        let editItem = NSMenuItem()
-        let editMenu = NSMenu(title: "Edit")
-        editMenu.addItem(NSMenuItem(title: "Undo", action: Selector(("undo:")), keyEquivalent: "z"))
-        let redo = NSMenuItem(title: "Redo", action: Selector(("redo:")), keyEquivalent: "z")
-        redo.keyEquivalentModifierMask = [.command, .shift]
-        editMenu.addItem(redo)
-        editMenu.addItem(.separator())
-        editMenu.addItem(NSMenuItem(title: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x"))
-        editMenu.addItem(NSMenuItem(title: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c"))
-        editMenu.addItem(NSMenuItem(title: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v"))
-        editMenu.addItem(NSMenuItem(title: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a"))
-        editItem.submenu = editMenu
-        main.addItem(editItem)
-
-        let windowItem = NSMenuItem()
-        let windowMenu = NSMenu(title: "Window")
-        windowMenu.addItem(NSMenuItem(title: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w"))
-        windowItem.submenu = windowMenu
-        main.addItem(windowItem)
-        return main
+    private func updateActivationAfterClosing() {
+        // AppKit sends willClose before removing the window from the screen.
+        DispatchQueue.main.async { [weak self] in
+            guard let self, workspace == nil,
+                  settingsWindow?.isVisible != true, welcomeWindow?.isVisible != true else { return }
+            NSApp.setActivationPolicy(.accessory)
+        }
     }
 }

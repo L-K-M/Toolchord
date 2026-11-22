@@ -54,7 +54,7 @@ final class ScriptToolStore {
         var problems: [String] = []
         for url in entries.filter({ $0.pathExtension == "json" }).sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
             do {
-                let definition = try read(url)
+                let definition = try PortableToolFile(reading: url).definition
                 guard url.lastPathComponent == "\(definition.id).json" else {
                     throw Error.document(url.lastPathComponent, "The filename must match the saved tool identifier.")
                 }
@@ -67,47 +67,40 @@ final class ScriptToolStore {
         return LoadReport(definitions: definitions, problems: problems)
     }
 
-    func save(_ definition: ScriptToolDefinition, replacing expected: ScriptToolDefinition?) throws {
+    func document(for id: String) throws -> PortableToolFile {
+        try Self.validateID(id)
+        let document = try PortableToolFile(reading: directoryURL.appendingPathComponent("\(id).json"))
+        guard document.definition.id == id else { throw Error.updateConflict(id) }
+        return document
+    }
+
+    func save(_ definition: ScriptToolDefinition, replacing expected: ScriptToolDefinition?,
+              preserving original: PortableToolFile? = nil) throws {
         try Self.validateID(definition.id)
         try definition.validate()
         if let expected, expected.id != definition.id { throw Error.updateConflict(definition.id) }
         try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
         let url = directoryURL.appendingPathComponent("\(definition.id).json")
-        let data = try Self.encode(definition)
         var coordinationError: NSError?
         var writeError: (any Swift.Error)?
         NSFileCoordinator().coordinate(writingItemAt: url, options: .forReplacing, error: &coordinationError) { target in
             do {
+                var source = original
                 if let expected {
-                    guard FileManager.default.fileExists(atPath: target.path),
-                          try Self.encode(read(target)) == Self.encode(expected) else {
+                    guard FileManager.default.fileExists(atPath: target.path) else { throw Error.updateConflict(definition.id) }
+                    let stored = try PortableToolFile(reading: target)
+                    guard try PortableToolFile.encode(stored.definition) == PortableToolFile.encode(expected) else {
                         throw Error.updateConflict(definition.id)
                     }
+                    source = stored
                 } else if FileManager.default.fileExists(atPath: target.path) {
                     throw Error.createConflict(definition.id)
                 }
-                try data.write(to: target, options: .atomic)
+                try PortableToolFile.export(definition, preserving: source, to: target)
             } catch { writeError = error }
         }
         if let coordinationError { throw coordinationError }
         if let writeError { throw writeError }
-    }
-
-    private func read(_ url: URL) throws -> ScriptToolDefinition {
-        do {
-            let metadata = try url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey])
-            guard metadata.isRegularFile == true, metadata.isSymbolicLink != true else {
-                throw ToolDiagnostic("Use a regular JSON document, not a directory or symbolic link.")
-            }
-            guard (metadata.fileSize ?? 0) <= 1024 * 1024 else { throw ToolDiagnostic("The tool document exceeds 1 MiB.") }
-            let definition = try JSONDecoder().decode(ScriptToolDefinition.self, from: Data(contentsOf: url))
-            try Self.validateID(definition.id)
-            try definition.validate()
-            return definition
-        } catch {
-            let message = (error as? ToolDiagnostic)?.description ?? error.localizedDescription
-            throw Error.document(url.lastPathComponent, message)
-        }
     }
 
     private static func validateID(_ id: String) throws {
@@ -118,9 +111,4 @@ final class ScriptToolStore {
         }
     }
 
-    private static func encode(_ definition: ScriptToolDefinition) throws -> Data {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys, .prettyPrinted]
-        return try encoder.encode(definition)
-    }
 }

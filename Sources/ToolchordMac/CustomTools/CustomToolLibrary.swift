@@ -38,9 +38,18 @@ final class CustomToolLibrary {
         }
     }
 
-    func save(_ definition: ScriptToolDefinition, replacing expected: ScriptToolDefinition?) throws {
+    /// A private, separate file keeps partial editor metadata out of the installed catalog.
+    var recoveryURL: URL? { store?.directoryURL.appendingPathComponent(".workspace/AuthoringDraft.json") }
+
+    func document(for id: String) throws -> PortableToolFile {
         guard let store else { throw ToolDiagnostic(loadProblem ?? "Custom tool storage is unavailable.") }
-        try store.save(definition, replacing: expected)
+        return try store.document(for: id)
+    }
+
+    func save(_ definition: ScriptToolDefinition, replacing expected: ScriptToolDefinition?,
+              preserving original: PortableToolFile? = nil) throws {
+        guard let store else { throw ToolDiagnostic(loadProblem ?? "Custom tool storage is unavailable.") }
+        try store.save(definition, replacing: expected, preserving: original)
         // A different invalid file must not make this successful save look
         // like a failure, nor discard its immediately searchable command.
         definitions.removeAll { $0.id == definition.id }

@@ -108,6 +108,84 @@ import ToolchordCore
         #expect(editor.trialResult?.output?.primaryText.hasPrefix("id:") == true)
     }
 
+    @Test func openingAnExistingToolPreservesUneditedMetadataSpelling() throws {
+        let folder = directory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let store = ScriptToolStore(directoryURL: folder)
+        var original = ScriptToolDefinition(id: "custom.labels", title: "Labels", source: "function preview() { return 'ok'; }",
+                                            actions: [.init(id: "copy", title: "  Copy  ")], capabilities: ["clipboard.write"])
+        original.regenerateTitle = " Again "
+        try store.save(original, replacing: nil)
+        let library = CustomToolLibrary(store: store)
+        library.reload()
+        let editor = CustomToolEditorModel(library: library, editing: original.id)
+        #expect(!editor.isDirty)
+    }
+
+    @Test func generateAndRevertHaveNamedUndoAndRedo() async throws {
+        let folder = directory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let library = CustomToolLibrary(store: ScriptToolStore(directoryURL: folder))
+        let generated = ScriptToolDefinition(id: "custom.ignored", title: "Identity", source: "function preview(input) { return input; }")
+        let editor = CustomToolEditorModel(library: library, generator: FixedGenerator(definition: generated))
+        let original = editor.definition
+        editor.description = "Generate an identity tool"
+        editor.generate()
+        await editor.waitForIdle()
+        let undo = editor.undoManager
+        #expect(undo.undoActionName == "Generate Tool")
+        undo.undo()
+        #expect(editor.definition == original)
+        #expect(editor.description == "Generate an identity tool")
+        undo.redo()
+        #expect(editor.definition.title == "Identity")
+        #expect(editor.description.isEmpty)
+        editor.revert()
+        #expect(undo.undoActionName == "Revert Changes")
+        undo.undo()
+        #expect(editor.definition.title == "Identity")
+        #expect(editor.isDirty)
+        undo.redo()
+        #expect(!editor.isDirty)
+    }
+
+    @Test func recoveryKeepsIncompleteFieldsAndProtectsStaleToolsWithoutSavingPrivateInput() async throws {
+        let folder = directory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let store = ScriptToolStore(directoryURL: folder)
+        let original = ScriptToolDefinition(id: "custom.recovery", title: "Original", source: "function preview(input) { return input; }")
+        try store.save(original, replacing: nil)
+        let library = CustomToolLibrary(store: store)
+        library.reload()
+        let editor = CustomToolEditorModel(library: library, editing: original.id)
+        editor.definition.title = "My draft"
+        editor.optionsJSON = "[unfinished"
+        editor.description = "sensitive-prompt"
+        editor.sampleInput = "sensitive-sample"
+        editor.sampleOptions = ["x": "sensitive-option"]
+        editor.flushRecovery()
+        let journal = try #require(library.recoveryURL)
+        let data = try Data(contentsOf: journal)
+        #expect(!String(decoding: data, as: UTF8.self).contains("sensitive-"))
+        let recovered = CustomToolEditorModel(library: library)
+        #expect(recovered.restoreRecoveryIfAvailable())
+        #expect(recovered.optionsJSON == "[unfinished")
+        #expect(recovered.definition.title == "My draft")
+        #expect(recovered.description.isEmpty && recovered.sampleOptions.isEmpty)
+        #expect(!recovered.canSave && recovered.isDirty)
+
+        var external = original
+        external.title = "External"
+        try store.save(external, replacing: original)
+        recovered.optionsJSON = "[]"
+        recovered.runSample()
+        await recovered.waitForIdle()
+        #expect(!recovered.save())
+        #expect(try store.load() == [external])
+        recovered.discardDraft()
+        #expect(!FileManager.default.fileExists(atPath: journal.path))
+    }
+
     @Test func malformedGeneratedSourceAndUnavailableModelLeaveEditableDraft() async throws {
         let folder = directory()
         defer { try? FileManager.default.removeItem(at: folder) }

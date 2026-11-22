@@ -2,12 +2,11 @@ import SwiftUI
 
 struct AuthoringProviderControls: View {
     let model: CustomToolEditorModel
-    @State private var address = ""
-    @State private var key = ""
+    @Bindable var workspace: CustomToolWorkspace
 
     private var settings: AuthoringProviderSettings { model.providers }
-    private var addressChanged: Bool { settings.selected == .endpoint && address != settings.endpoint }
-    private var keyChanged: Bool { settings.selected == .endpoint && !key.isEmpty }
+    private var addressChanged: Bool { settings.selected == .endpoint && workspace.providerAddress != settings.endpoint }
+    private var keyChanged: Bool { settings.selected == .endpoint && !workspace.providerKey.isEmpty }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -47,12 +46,10 @@ struct AuthoringProviderControls: View {
         }
         .task { await settings.discover() }
         .task(id: settings.selected.rawValue + "|" + settings.endpoint) {
-            address = settings.endpoint
-            key = ""
+            workspace.syncProviderForm(with: settings)
             if settings.selected.requiresInstallation { await settings.loadModels() }
             if settings.selected == .endpoint { await settings.checkKey() }
         }
-        .onDisappear { key = "" }
     }
 
     private var disclosure: String {
@@ -71,28 +68,28 @@ struct AuthoringProviderControls: View {
     private var endpointControls: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                TextField("Endpoint", text: $address, prompt: Text("https://example.com/v1"))
+                TextField("Endpoint", text: $workspace.providerAddress, prompt: Text("https://example.com/v1"))
                     .textFieldStyle(.roundedBorder)
                     .onSubmit { applyAddress() }
                     .accessibilityLabel("OpenAI-compatible API base URL")
                     .help("Use the base URL for the models and chat/completions endpoints.")
                 Button("Use Address") { applyAddress() }
-                    .disabled(address.isEmpty || !addressChanged || settings.savingKey)
+                    .disabled(workspace.providerAddress.isEmpty || !addressChanged || settings.savingKey)
             }
             if let problem = settings.endpointMessage {
                 Text(problem).font(.caption).foregroundStyle(.red)
             }
             if !settings.endpoint.isEmpty && !addressChanged {
                 HStack {
-                    SecureField(settings.keyStored == true ? "Replace saved API key" : "API key (optional)", text: $key)
+                    SecureField(settings.keyStored == true ? "Replace saved API key" : "API key (optional)", text: $workspace.providerKey)
                         .textFieldStyle(.roundedBorder)
                         .accessibilityLabel("API key for this endpoint")
                         .onSubmit { saveKey() }
                     Button("Save Key") { saveKey() }
-                        .disabled(key.isEmpty || settings.savingKey)
+                        .disabled(workspace.providerKey.isEmpty || settings.savingKey)
                     if settings.keyStored == true {
                         Button("Remove Key") { Task { await settings.updateKey(nil) } }
-                            .disabled(settings.savingKey || !key.isEmpty)
+                            .disabled(settings.savingKey || !workspace.providerKey.isEmpty)
                     }
                 }
                 if let message = settings.keyMessage {
@@ -103,18 +100,19 @@ struct AuthoringProviderControls: View {
     }
 
     private func applyAddress() {
-        guard settings.useEndpoint(address) else { return }
-        address = settings.endpoint
-        key = ""
+        guard settings.useEndpoint(workspace.providerAddress) else { return }
+        workspace.providerAddress = settings.endpoint
+        workspace.providerKey = ""
+        workspace.syncProviderForm(with: settings)
     }
 
     private func saveKey() {
-        guard !key.isEmpty, !addressChanged else { return }
-        let submitted = key
+        guard !workspace.providerKey.isEmpty, !addressChanged else { return }
+        let submitted = workspace.providerKey
         let destination = settings.endpoint
         Task {
             guard settings.selected == .endpoint, settings.endpoint == destination else { return }
-            if await settings.updateKey(submitted), key == submitted { key = "" }
+            if await settings.updateKey(submitted), workspace.providerKey == submitted { workspace.providerKey = "" }
         }
     }
 

@@ -1,8 +1,6 @@
 import Foundation
-import ToolchordCore
-#if canImport(FoundationModels)
 import FoundationModels
-#endif
+import ToolchordCore
 
 @MainActor
 protocol ScriptGenerating {
@@ -14,52 +12,40 @@ protocol ScriptGenerating {
 @MainActor
 struct LocalScriptGenerator: ScriptGenerating {
     var unavailableReason: String? {
-        #if canImport(FoundationModels)
-        if #available(macOS 26.0, *) {
-            switch SystemLanguageModel.default.availability {
-            case .available: return nil
-            case .unavailable(.deviceNotEligible):
-                return "This Mac doesn’t support Apple Intelligence. You can edit the JavaScript below."
-            case .unavailable(.appleIntelligenceNotEnabled):
-                return "Turn on Apple Intelligence in System Settings to generate a tool, or edit the JavaScript below."
-            case .unavailable(.modelNotReady):
-                return "The on-device model is still getting ready. Try again later, or edit the JavaScript below."
-            @unknown default:
-                return "The on-device model is unavailable. You can edit the JavaScript below."
-            }
+        switch SystemLanguageModel.default.availability {
+        case .available: return nil
+        case .unavailable(.deviceNotEligible):
+            return "This Mac doesn’t support Apple Intelligence. You can edit the JavaScript below."
+        case .unavailable(.appleIntelligenceNotEnabled):
+            return "Turn on Apple Intelligence in System Settings to generate a tool, or edit the JavaScript below."
+        case .unavailable(.modelNotReady):
+            return "The on-device model is still getting ready. Try again later, or edit the JavaScript below."
+        @unknown default:
+            return "The on-device model is unavailable. You can edit the JavaScript below."
         }
-        #endif
-        return "On-device generation requires macOS 26 and Apple Intelligence. You can edit the JavaScript below."
     }
 
     func generate(description: String, current: ScriptToolDefinition, isNew: Bool) async throws -> ScriptToolDefinition {
         if let reason = unavailableReason { throw ToolDiagnostic(reason) }
-        #if canImport(FoundationModels)
-        if #available(macOS 26.0, *) {
-            let session = LanguageModelSession(model: SystemLanguageModel.default, instructions: AuthoringPrompt.instructions)
-            let prompt = try AuthoringPrompt.request(description: description, current: current, isNew: isNew)
-            let options = GenerationOptions(sampling: .greedy, maximumResponseTokens: 3000)
-            let response = try await session.respond(to: prompt, generating: ModelDraft.self, options: options)
+        let session = LanguageModelSession(model: SystemLanguageModel.default, instructions: AuthoringPrompt.instructions)
+        let prompt = try AuthoringPrompt.request(description: description, current: current, isNew: isNew)
+        let options = GenerationOptions(sampling: .greedy, maximumResponseTokens: 3000)
+        let response = try await session.respond(to: prompt, generating: ModelDraft.self, options: options)
+        try Task.checkCancellation()
+        do {
+            return try Self.definition(from: response.content, id: current.id)
+        } catch {
+            // Guided generation guarantees types, but the source and option
+            // defaults must also satisfy the tool contract. Give the model
+            // its precise validation error once before returning to the editor.
+            let repair = "Correct your draft: " + error.localizedDescription +
+                " Preserve the requested behavior. Omit unused options and actions."
+            let revision = try await session.respond(to: repair, generating: ModelDraft.self, options: options)
             try Task.checkCancellation()
-            do {
-                return try Self.definition(from: response.content, id: current.id)
-            } catch {
-                // Guided generation guarantees types, but the source and option
-                // defaults must also satisfy the tool contract. Give the model
-                // its precise validation error once before returning to the editor.
-                let repair = "Correct your draft: " + error.localizedDescription +
-                    " Preserve the requested behavior. Omit unused options and actions."
-                let revision = try await session.respond(to: repair, generating: ModelDraft.self, options: options)
-                try Task.checkCancellation()
-                return try Self.definition(from: revision.content, id: current.id)
-            }
+            return try Self.definition(from: revision.content, id: current.id)
         }
-        #endif
-        throw ToolDiagnostic("The on-device model is unavailable.")
     }
 
-    #if canImport(FoundationModels)
-    @available(macOS 26.0, *)
     private static func definition(from draft: ModelDraft, id: String) throws -> ScriptToolDefinition {
         let options = draft.options?.map { option in
             ScriptOption(id: option.id, label: option.label, defaultValue: option.defaultValue,
@@ -72,7 +58,6 @@ struct LocalScriptGenerator: ScriptGenerating {
                                   makeSeedBody: draft.makeSeedBody, helpers: draft.helpers).definition(id: id)
     }
 
-    @available(macOS 26.0, *)
     @Generable
     fileprivate struct ModelDraft {
         @Guide(description: "A short verb-first title for the tool")
@@ -97,7 +82,6 @@ struct LocalScriptGenerator: ScriptGenerating {
         var helpers: String?
     }
 
-    @available(macOS 26.0, *)
     @Generable
     fileprivate struct ModelOption {
         var id: String
@@ -108,19 +92,15 @@ struct LocalScriptGenerator: ScriptGenerating {
         var choices: [ModelChoice]
     }
 
-    @available(macOS 26.0, *)
     @Generable
     fileprivate struct ModelChoice {
         var id: String
         var label: String
     }
 
-    @available(macOS 26.0, *)
     @Generable
     fileprivate struct ModelAction {
         var id: String
         var title: String
     }
-    #endif
-
 }
