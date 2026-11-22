@@ -7,7 +7,7 @@ struct CustomToolEditorView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Picker("Tool", selection: Binding(get: { model.documentID }, set: model.selectDocument)) {
+                Picker("Tool", selection: Binding(get: { model.documentID }, set: { model.selectDocument($0) })) {
                     Text("New Custom Tool").tag("new")
                     ForEach(model.library.definitions, id: \.id) { definition in
                         Text(definition.title).tag(definition.id)
@@ -15,14 +15,14 @@ struct CustomToolEditorView: View {
                 }
                 .frame(maxWidth: 360)
                 .disabled(model.isBusy || model.isDirty)
-                Button("Revert Changes", action: model.revert)
+                Button("Revert Changes") { model.revert() }
                     .disabled(!model.isDirty || model.isBusy)
                 Spacer()
                 if model.isBusy {
                     ProgressView().controlSize(.small)
-                    Button("Cancel", action: model.cancelWork)
+                    Button("Cancel") { model.cancelWork() }
                 }
-                Button(model.expected == nil ? "Save Tool" : "Update Tool", action: model.save)
+                Button(model.expected == nil ? "Save Tool" : "Update Tool") { model.save() }
                     .keyboardShortcut("s", modifiers: .command)
                     .disabled(!model.canSave)
             }
@@ -80,10 +80,10 @@ struct CustomToolEditorView: View {
                 .border(.separator)
                 .accessibilityLabel("Describe the custom tool")
             HStack {
-                Button("Generate on This Mac", action: model.generate)
+                Button("Generate on This Mac") { model.generate() }
                     .disabled(model.isBusy || model.description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.unavailableReason != nil)
                 Spacer()
-                Button("Check Availability", action: model.refreshAvailability)
+                Button("Check Availability") { model.refreshAvailability() }
                     .help("Refresh the on-device model status")
                     .disabled(model.isBusy)
             }
@@ -146,7 +146,7 @@ struct CustomToolEditorView: View {
             HStack {
                 Text("Sample input").font(.headline)
                 Spacer()
-                Button("Run Sample", action: model.runSample)
+                Button("Run Sample") { model.runSample() }
                     .keyboardShortcut(.return, modifiers: .command)
                     .disabled(model.isBusy)
                 if !model.draftActions.isEmpty {
