@@ -3,7 +3,7 @@ name: Toolchord
 options:
   bundleIdPrefix: ch.lkmc
   deploymentTarget:
-    macOS: "26.0"
+    macOS: "14.0"
   createIntermediateGroups: true
 packages:
   ToolchordPackage:
@@ -11,7 +11,7 @@ packages:
 settings:
   base:
     SWIFT_VERSION: "6.0"
-    MACOSX_DEPLOYMENT_TARGET: "26.0"
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
 targets:
   Toolchord:
     type: application

@@ -9,7 +9,7 @@ Search for **Make Custom Tool** in the palette. Describe the tool, choose its ge
 | Ollama | Start the Ollama server on this Mac, choose **List Models**, and select a model. Toolchord connects over loopback. Ollama may forward requests for a cloud-backed model. |
 | Custom endpoint | Enter the OpenAI-compatible base URL, such as `https://example.com/v1` or `http://127.0.0.1:11434/v1`. Choose **Use Address**. Save an optional bearer key, then list models or enter one. Toolchord uses `GET /models` and `POST /chat/completions` relative to that base. |
 
-The editor remembers model choices by provider and endpoint. The native authoring service stores each endpoint’s key in macOS Keychain. Generating with an external provider sends your description and the current definition when revising. Sample inputs, trial results, and palette contents stay on the Mac. CLI and endpoint generation, hand editing, testing and saving work on macOS 26 or later.
+The editor remembers model choices by provider and endpoint. The native authoring service stores each endpoint’s key in macOS Keychain. Generating with an external provider sends your description and the current definition when revising. Sample inputs, trial results, and palette contents stay on the Mac. CLI and endpoint generation, hand editing, testing and saving work on macOS 14 or later.
 
 ## API version 1
 

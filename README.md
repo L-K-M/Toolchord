@@ -28,7 +28,7 @@ Paste something and Toolchord suggests the tools that fit it. Every result shows
 
 Search for **Make Custom Tool** in the palette. Describe what you want, choose a provider and model, then run the generated JavaScript on a sample. Press **⌘↵** to run the sample and **⌘S** to add the tested tool to the palette. Select a saved tool in the sidebar to revise it. The Script tab lets you edit JavaScript directly. [JavaScript tool API and example](docs/javascript-tools.md)
 
-Toolchord detects installed **Codex CLI** and **Claude Code** and uses the selected harness’s existing sign-in. Choose **List Models**, type a model ID, or keep the harness default. If **Ollama** is installed, start its server and choose one of its models. For an **OpenAI-compatible endpoint**, enter the API base URL and optionally save a key in macOS Keychain. Apple Intelligence runs offline on eligible Macs.
+Toolchord detects installed **Codex CLI** and **Claude Code** and uses the selected harness’s existing sign-in. Choose **List Models**, type a model ID, or keep the harness default. If **Ollama** is installed, start its server and choose one of its models. For an **OpenAI-compatible endpoint**, enter the API base URL and optionally save a key in macOS Keychain. Apple Intelligence remains available offline on eligible Macs running macOS 26 or later. The other providers and the editor support macOS 14 or later.
 
 File ▸ Open Tool opens a working copy of a version-one JSON or `.toolchord` file. You can also open a `.toolchord` file from Finder or drop it on the editor. File ▸ Export Tool writes a portable copy. The library and exported files are independent. Toolchord recovers interrupted edits to a tool definition the next time you open the editor. Samples, generation prompts, and results stay out of the recovery file.
 
@@ -38,7 +38,7 @@ The palette and its JavaScript tools run locally in the App Sandbox without netw
 
 ## Requirements
 
-- macOS Tahoe 26 or later
+- macOS 14 Sonoma or later (Liquid Glass on macOS 26 and later)
 - To build: Xcode 26 or later and [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`)
 
 ## Build and run

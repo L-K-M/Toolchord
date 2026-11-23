@@ -1,4 +1,4 @@
-// swift-tools-version: 6.2
+// swift-tools-version: 6.0
 import PackageDescription
 
 // Toolchord is split so that tool evaluation stays deterministic and testable
@@ -17,7 +17,7 @@ import PackageDescription
 // ToolchordMac.
 let package = Package(
     name: "Toolchord",
-    platforms: [.macOS(.v26)],
+    platforms: [.macOS(.v14)],
     products: [
         .executable(name: "toolchord-script-runner", targets: ["ToolchordScriptRunner"]),
         .library(name: "ToolchordCore", targets: ["ToolchordCore"]),

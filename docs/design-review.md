@@ -26,7 +26,7 @@ Two mockups proposed a dark command palette: a list-only state after pasting JSO
 - **"Tools · JSON input" became "Suggested for JSON" plus "Other tools".** Mockup 1 listed Decode URL, Decode Base64, and Convert Timestamp under "JSON input", although none of them applies to JSON. Suggestions now come from detection, with every other tool still reachable below.
 - **Category labels on the right were dropped.** "Format JSON — Format" repeats the verb, and the label takes the space the preview needs. The selected row shows ↵ instead, and the preview header shows the command's one-line summary.
 - **Lavender accent became the system accent color.** The selection, focus rings, and Copy button follow the user's accent color like other Mac apps; lavender-to-indigo lives on in the app icon.
-- **Flat dark surface became Liquid Glass**, in light and dark appearance, falling back to opaque with Reduce Transparency.
+- **Flat dark surface became Liquid Glass** on macOS 26+ (vibrancy on 14–15), in light and dark appearance, falling back to opaque with Reduce Transparency.
 - **Status gained a tone.** Success is green with a checkmark, warnings (such as **Signature unverified** for JWTs) are amber with a triangle, and errors are red with the offending line and a caret, so status never relies on color alone.
 - **Options appear in the preview.** Indentation, units, alphabets, and modes sit under the preview header (and in the Actions menu), so the user rarely needs to open the tool.
 

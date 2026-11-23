@@ -148,7 +148,7 @@ private final class PalettePreviewView: NSView {
         self.session = session
         self.style = style
         hosting = NSHostingView(rootView: Self.root(session: session, style: style))
-        surface = PaletteSurface(content: hosting)
+        surface = PaletteSurface(content: hosting, blending: .withinWindow)
         super.init(frame: .zero)
         let material = surface.view
         material.translatesAutoresizingMaskIntoConstraints = false

@@ -18,7 +18,7 @@ implementation contracts and research docs. Keep them in step with the code.
 
 ## Stack and layout
 
-- **Swift 6**, macOS 26+ (Liquid Glass). AppKit `NSPanel` for the
+- **Swift 6**, macOS 14+ (Liquid Glass on macOS 26+). AppKit `NSPanel` for the
   window, SwiftUI for content. **App Sandbox on, no network entitlement** —
   the privacy promise; don't add capabilities casually. External tool generation runs in a private embedded XPC service.
 - `Package.swift` holds the testable library targets: `Sources/ToolchordCore`

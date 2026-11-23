@@ -74,7 +74,7 @@ Tools offered by at least three of IT Tools, DevUtils, DevToys, Devly, and Boop 
 | Target display | `NSScreen.main` in an accessory app can report the menu-bar display ([FB11506568](https://github.com/feedback-assistant/reports/issues/355)). `CGWindowListCopyWindowInfo` bounds are available without Screen Recording permission. | Place the panel on the display of the frontmost app's topmost window, falling back to the pointer's display. |
 | Login items | `SMAppService.mainApp` needs an app bundle; users can disable it in System Settings, and App Review requires opt-in. | Off by default; status is read from the system each time. |
 | Screen lock | `com.apple.screenIsLocked` is not documented API ([DTS](https://developer.apple.com/forums/thread/686011)). | Dismiss on it as a best-effort signal, plus documented session-resign, sleep, and display-sleep notifications. |
-| Liquid Glass and icons | macOS 26 adds `NSGlassEffectView`; it [wraps non-squircle icons in a gray squircle](https://lapcatsoftware.com/articles/2025/6/2.html). Xcode 26+ compiles Icon Composer `.icon` documents with fallbacks for earlier systems. | Liquid Glass panel; the app icon is a generated `.icon` document. |
+| Liquid Glass and icons | macOS 26 adds `NSGlassEffectView`; it [wraps non-squircle icons in a gray squircle](https://lapcatsoftware.com/articles/2025/6/2.html). Xcode 26+ compiles Icon Composer `.icon` documents with fallbacks for earlier systems. | Glass panel on macOS 26+, `NSVisualEffectView` on 14–15; the app icon is a generated `.icon` document. |
 
 ## Validation before catalog expansion
 
