@@ -1,6 +1,6 @@
 # JavaScript tools
 
-Search for **Make Custom Tool** in the palette. Describe the tool, choose its generation provider, and run the draft on sample input. Inspect the preview and any action outputs before saving. The saved title becomes searchable immediately. Select the same tool in the editor to revise it. You can also edit its JavaScript directly.
+Search for **Make Custom Tool** in the palette. Describe the tool, choose its generation provider, and run the draft on sample input. Inspect the preview and any action outputs before saving. The saved title becomes searchable immediately. Select an existing tool and choose **Update** to describe the changes you want. You can also edit its JavaScript directly.
 
 | Provider | Setup and model choice |
 | --- | --- |
@@ -13,17 +13,23 @@ The editor remembers model choices by provider and endpoint. The native authorin
 
 ## API version 1
 
-A saved JSON document has these fields:
+A tool is one UTF-8 `.js` file. Its first line is `/* @toolchord`, followed by a JSON object and a closing `*/` on its own line. The JavaScript below the comment defines `preview(input, options, api)` and any helpers. Toolchord reads the header to build controls before the script runs. For example, **Format JSON** declares its **Indent** picker there and reads the chosen string through `options.indent`.
+
+The required fields are `apiVersion`, `id`, and `title`. To include a literal `*/` inside a header string, write `*\/` in its JSON.
 
 | Field | Meaning |
 | --- | --- |
 | `apiVersion` | The integer `1`. |
 | `id`, `title`, `summary` | New tools get a stable `custom.` identifier. A customized built-in keeps its catalog ID. Title and summary appear in the palette. |
-| `source` | Synchronous JavaScript containing a global `function preview(input, options, api)`. |
 | `options` | Optional settings. A toggle has `id`, `label`, and a string `defaultValue` of `"true"` or `"false"`. A choice also has `choices: [{id, label}, …]`. The default must be one of its IDs. |
 | `regenerateTitle` | Optional button label for a generator. A generator gets `null` input and a stable `api.seed`. |
 | `actions` | An array of `{id, title}` entries for explicit action buttons. |
 | `capabilities` | An array. Declare `"clipboard.write"` when an action writes text. |
+| `palette` | Optional display and discovery metadata, including aliases, group, icon, copy labels, and suggestion rules. |
+
+The optional `palette` object accepts `group` (group ID), `groupTitle`, `aliases` (search terms), and either `glyph` (text) or `symbol` (an SF Symbol name). Set `copyNoun` to label the copy command, or use `copyLabels` to select the noun by option ID and value. For example, `"copyLabels": {"format": {"hex": "hex value"}}` labels the command **Copy hex value & Close** when `format` is `"hex"`.
+
+To suggest the tool for matching input, add `"suggestions": [{"when": ["json"], "score": 80}]` inside `palette`. Each rule matches all its conditions. Use an input kind from [InputKind](../Sources/ToolchordCore/Detection/InputProfile.swift) or `plain`, and prefix a condition with `!` to exclude it. The first matching rule supplies the score from 0 to 100.
 
 **Preview** runs when input, options, or selection change. An attached empty string is a valid input. Options are an object of resolved string values keyed by ID. Return text directly or return an object with the following properties:
 
@@ -41,9 +47,19 @@ Throw an Error for an invalid input, or return `{error, message, location?}`. Er
 
 **Actions** run through `function perform(action, input, options, api)`. Use `api.clipboard.writeText(text)` once, optionally passing `"secret"` as its second argument. Toolchord commits the write after the action succeeds and the originating selection and input are still current. Trying an action in the editor shows the requested text in memory. A script receives pasted text only through its input. Clipboard reads belong to the app’s explicit Paste command.
 
-Here is the source of a tool with an action whose ID is `copyAdded`. Given two lists separated by a blank line, it previews the additions and removals and lets you copy just the additions.
+Save this example as `compare-lists.js` and open it in Toolchord. Give it two lists separated by a blank line. The **Pretty JSON** toggle changes the preview, and **Copy Additions** copies the added lines.
 
 ```javascript
+/* @toolchord
+{
+  "apiVersion": 1,
+  "id": "custom.compareLists",
+  "title": "Compare Lists",
+  "options": [{"id": "pretty", "label": "Pretty JSON", "defaultValue": "true"}],
+  "actions": [{"id": "copyAdded", "title": "Copy Additions"}],
+  "capabilities": ["clipboard.write"]
+}
+*/
 function compare(input) {
     const lists = input.replace(/\r\n?/g, "\n").split("\n\n");
     if (lists.length !== 2) throw Error("Separate two lists with a blank line.");
@@ -54,10 +70,10 @@ function compare(input) {
     };
 }
 
-function preview(input) {
+function preview(input, options) {
     const {added, removed} = compare(input);
     return {
-        primaryText: JSON.stringify({added, removed}, null, 2),
+        primaryText: JSON.stringify({added, removed}, null, options.pretty === "true" ? 2 : 0),
         status: added.length + " added, " + removed.length + " removed",
         syntax: "json"
     };
@@ -92,12 +108,14 @@ A Markdown tree has a `nodes` array in breadth-first order. Read the root at ind
 
 ## Bundled tools and verification
 
-The catalog in `Sources/ToolchordCore/Scripts/catalog.json` stores command IDs, display order, search terms, suggestion rules and option definitions. Its script names select JavaScript resources in the same directory. For a family with shared JavaScript libraries, list their basenames in the manifest’s `libraries` object in load order. The runtime runs the bundled preview or generator function with the same argument and result conventions as a local tool. The app runs its signed bundled code directly and isolates editable code in a separate process.
+Each bundled command ships as a self-contained JavaScript file under `Sources/ToolchordCore/Scripts/`. The app runs the signed built-in directly. Samples and local edits run in a separate, bounded process.
+
+Some built-ins contain the same helper. A `// @shared tool.id/helper` marker identifies its source. After editing the helper in that tool, run `python3 scripts/sync-tool-helpers.py` to refresh its copies. Run it with `--check` to verify they match. Exported files include the helpers they use.
 
 ### Working with bundled tools in the editor
 
-Open **Make Custom Tool** and select a command under **Built-In Tools**, or choose **Edit Tool…** from the palette’s Actions menu. **Script** shows the JavaScript the command runs, including its shared helpers. Related commands may share a source file and select their behavior using `api.id`.
+Open **Make Custom Tool** and select a command under **Built-In Tools**, or choose **Edit Tool…** from the palette’s Actions menu. **Script** shows the complete file, including its metadata, functions, and helpers.
 
-Edit the script or options, run a sample with **⌘↵**, then save with **⌘S**. The library stores the customization on this Mac under the command’s original ID. Only the selected command changes. Samples and saved customizations run in the same bounded worker as other authored tools. **Revert Changes** discards unsaved edits. **Restore Built-In Version** removes the saved customization and returns the palette to the version bundled with the current app.
+Edit the header or a function, run a sample with **⌘↵**, then save with **⌘S**. The library stores the customization on this Mac under the command’s original ID. Only the selected command changes. Samples and saved customizations run in the same bounded worker as other authored tools. **Revert Changes** discards unsaved edits. **Restore Built-In Version** removes the saved customization and returns the palette to the version bundled with the current app.
 
 Run `make test` for tool fixtures, session behavior, the worker and editor/store tests. To exercise prompt generation with a real installed Apple Intelligence model, run `TOOLCHORD_TEST_LOCAL_MODEL=1 swift test --filter LiveAuthoringTests` on a compatible Mac. That check generates a tool, tries it on a sample, saves it, asks the model to revise it, and runs the reloaded definition.

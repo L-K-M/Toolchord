@@ -52,10 +52,13 @@ final class ScriptToolStore {
         }
         var definitions: [ScriptToolDefinition] = []
         var problems: [String] = []
-        for url in entries.filter({ $0.pathExtension == "json" }).sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
+        let documents = entries.filter { ["js", "json"].contains($0.pathExtension) }
+        let grouped = Dictionary(grouping: documents) { $0.deletingPathExtension().lastPathComponent }
+        for (name, files) in grouped.sorted(by: { $0.key < $1.key }) {
             do {
-                let definition = try PortableToolFile(reading: url).definition
-                guard url.lastPathComponent == "\(definition.id).json" else {
+                guard files.count == 1, let url = files.first else { throw Self.duplicateFiles(name) }
+                let definition = try PortableToolFile(reading: url, location: .installed).definition
+                guard name.hasSameUTF8(as: definition.id) else {
                     throw Error.document(url.lastPathComponent, "The filename must match the saved tool identifier.")
                 }
                 definitions.append(definition)
@@ -69,7 +72,9 @@ final class ScriptToolStore {
 
     func document(for id: String) throws -> PortableToolFile {
         try Self.validateID(id)
-        let document = try PortableToolFile(reading: directoryURL.appendingPathComponent("\(id).json"))
+        let url = try Self.installationURL(id, script: directoryURL.appendingPathComponent("\(id).js"),
+                                          legacy: directoryURL.appendingPathComponent("\(id).json"))
+        let document = try PortableToolFile(reading: url, location: .installed)
         guard document.definition.id == id else { throw Error.updateConflict(id) }
         return document
     }
@@ -79,28 +84,44 @@ final class ScriptToolStore {
     /// An unchanged signed definition needs no local file or future migration.
     @discardableResult
     func save(_ definition: ScriptToolDefinition, replacing expected: ScriptToolDefinition?,
-              preserving original: PortableToolFile? = nil) throws -> Bool {
+              preserving original: PortableToolFile? = nil, edited: PortableToolFile? = nil) throws -> Bool {
         try Self.validateID(definition.id)
         try definition.validate()
         if let expected, expected.id != definition.id { throw Error.updateConflict(definition.id) }
         try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+        if let edited, try PortableToolFile.encode(edited.definition) != PortableToolFile.encode(definition) {
+            throw Error.document(definition.id, "The script no longer matches the tested tool.")
+        }
         var wroteFile = false
-        try coordinate(definition.id, options: .forReplacing) { target in
-            var source = original
+        try coordinate(definition.id, options: .forReplacing) { target, script in
+            var source = edited ?? original
             if let expected {
-                source = try self.checkedDocument(at: target, expecting: expected)
+                let stored = try self.checkedDocument(at: target, expecting: expected)
+                if edited != nil {
+                    // The raw header owns unknown fields too. Do not replace an external
+                    // extension-only change with the editor's older snapshot.
+                    guard let original, try stored.matchesVersion(of: original) else {
+                        throw Error.updateConflict(definition.id)
+                    }
+                } else {
+                    source = stored
+                }
             } else if try Self.hasItem(at: target) {
                 throw Error.createConflict(definition.id)
-            } else if let bundled = CustomToolCatalog.bundledByID[definition.id] {
-                let canonical = try PortableToolFile.encode(bundled)
-                if try canonical == PortableToolFile.encode(definition) {
-                    guard let original else { return }
-                    // Imported tools may add fields this version cannot edit.
-                    let proposed = try PortableToolFile(data: original.data(for: definition))
-                    if try proposed.hasSameContent(as: PortableToolFile(data: canonical)) { return }
+            }
+            let bytes = try PortableToolFile.scriptData(for: definition, preserving: source)
+            if expected == nil, let text = ToolCatalog.bundledScriptText(id: definition.id) {
+                if edited != nil {
+                    if bytes.elementsEqual(text.utf8) { return }
+                } else {
+                    let proposed = try PortableToolFile(scriptText: String(decoding: bytes, as: UTF8.self))
+                    if try proposed.hasSameContent(as: PortableToolFile(scriptText: text)) { return }
                 }
             }
-            try PortableToolFile.export(definition, preserving: source, to: target)
+            // Rename within the directory before atomically replacing its contents.
+            // An interrupted migration leaves one readable copy of the old version.
+            if target != script { try FileManager.default.moveItem(at: target, to: script) }
+            try bytes.write(to: script, options: .atomic)
             wroteFile = true
         }
         return wroteFile
@@ -108,32 +129,46 @@ final class ScriptToolStore {
 
     func removeBuiltInOverride(replacing expected: ScriptToolDefinition, original: PortableToolFile) throws {
         guard CustomToolCatalog.bundledByID[expected.id] != nil else { throw Error.invalidID(expected.id) }
-        try coordinate(expected.id, options: .forDeleting) { target in
+        try coordinate(expected.id, options: .forDeleting) { target, _ in
             let stored = try self.checkedDocument(at: target, expecting: expected)
             // Restore deletes the entire document, including unknown metadata.
-            if try !stored.hasSameContent(as: original) { throw Error.updateConflict(expected.id) }
+            if try !stored.matchesVersion(of: original) { throw Error.updateConflict(expected.id) }
             try FileManager.default.removeItem(at: target)
         }
     }
 
     private func checkedDocument(at target: URL, expecting expected: ScriptToolDefinition) throws -> PortableToolFile {
         guard try Self.hasItem(at: target) else { throw Error.updateConflict(expected.id) }
-        let stored = try PortableToolFile(reading: target)
+        let stored = try PortableToolFile(reading: target, location: .installed)
         guard try PortableToolFile.encode(stored.definition) == PortableToolFile.encode(expected) else {
             throw Error.updateConflict(expected.id)
         }
         return stored
     }
 
-    private func coordinate(_ id: String, options: NSFileCoordinator.WritingOptions, operation: (URL) throws -> Void) throws {
-        let url = directoryURL.appendingPathComponent("\(id).json")
+    private func coordinate(_ id: String, options: NSFileCoordinator.WritingOptions, operation: (URL, URL) throws -> Void) throws {
+        let script = directoryURL.appendingPathComponent("\(id).js")
+        let legacy = directoryURL.appendingPathComponent("\(id).json")
         var coordinationError: NSError?
         var operationError: (any Swift.Error)?
-        NSFileCoordinator().coordinate(writingItemAt: url, options: options, error: &coordinationError) { target in
-            do { try operation(target) } catch { operationError = error }
+        NSFileCoordinator().coordinate(writingItemAt: script, options: options,
+                                       writingItemAt: legacy, options: options,
+                                       error: &coordinationError) { script, legacy in
+            do { try operation(Self.installationURL(id, script: script, legacy: legacy), script) }
+            catch { operationError = error }
         }
         if let coordinationError { throw coordinationError }
         if let operationError { throw operationError }
+    }
+
+    private static func installationURL(_ id: String, script: URL, legacy: URL) throws -> URL {
+        guard try hasItem(at: legacy) else { return script }
+        if try hasItem(at: script) { throw duplicateFiles(id) }
+        return legacy
+    }
+
+    private static func duplicateFiles(_ id: String) -> Error {
+        .document(id, "Both a .js and a .json file exist for this tool. Keep one file in the library and reload.")
     }
 
     /// Treat a broken symbolic link as an occupied filename too.

@@ -1,8 +1,7 @@
 import SwiftUI
-import ToolchordCore
 
 struct CustomToolDetailView: View {
-    private enum Page: String, CaseIterable { case describe = "Describe", script = "Script", options = "Options" }
+    private enum Page { case describe, script }
 
     @Bindable var model: CustomToolEditorModel
     let workspace: CustomToolWorkspace
@@ -18,7 +17,8 @@ struct CustomToolDetailView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Picker("Editor section", selection: $page) {
-                ForEach(Page.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                Text(model.isRevisingTool ? "Update" : "Describe").tag(Page.describe)
+                Text("Script").tag(Page.script)
             }
             .pickerStyle(.segmented)
             .labelsHidden()
@@ -27,7 +27,6 @@ struct CustomToolDetailView: View {
             switch page {
             case .describe: descriptionPage
             case .script: scriptPage
-            case .options: optionsPage
             }
 
             if model.library.isModifiedBuiltIn(id: model.documentID) {
@@ -54,12 +53,13 @@ struct CustomToolDetailView: View {
     private var descriptionPage: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
-                Text("Describe your tool").font(.headline)
-                AuthoringTextEditor(text: $model.description, label: "Describe the custom tool", monospaced: false)
+                Text(model.isRevisingTool ? "Update your tool" : "Describe your tool").font(.headline)
+                AuthoringTextEditor(text: $model.description, label: "Tool instructions", monospaced: false)
                     .frame(height: 140)
                     .overlay(alignment: .topLeading) {
                         if model.description.isEmpty {
-                            Text("For example, sort lines by length and remove duplicates.")
+                            Text(model.isRevisingTool ? "What would you like to change?"
+                                 : "For example, sort lines by length and remove duplicates.")
                                 .foregroundStyle(.tertiary)
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 7)
@@ -77,69 +77,18 @@ struct CustomToolDetailView: View {
     }
 
     private var scriptPage: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 7) {
-                GridRow {
-                    Text("Name")
-                    TextField("Tool title", text: $model.definition.title)
-                }
-                GridRow {
-                    Text("Summary")
-                    TextField("Summary", text: $model.definition.summary)
-                }
+        VStack(alignment: .leading, spacing: 8) {
+            AuthoringTextEditor(text: $model.scriptText, label: "Tool JavaScript file", monospaced: true)
+            if let problem = model.scriptProblem {
+                Label(problem, systemImage: "exclamationmark.triangle")
+                    .foregroundStyle(.orange)
+                    .textSelection(.enabled)
+            } else {
+                Text("The `@toolchord` header defines the tool and its controls. The JavaScript below it runs the tool.")
+                    .foregroundStyle(.secondary)
             }
-            .textFieldStyle(.roundedBorder)
-            Divider().padding(.vertical, 3)
-            HStack {
-                Text("JavaScript").font(.headline)
-                if ToolCatalog.command(id: model.definition.id) != nil {
-                    Text(model.definition.id)
-                        .font(.system(.caption, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-                        .help("This tool’s identifier is available to the script as api.id.")
-                }
-            }
-            AuthoringTextEditor(text: $model.definition.source, label: "Custom tool JavaScript", monospaced: true)
-            Text("preview(input, options, api) returns text or a result object. Custom buttons call perform(action, input, options, api).")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .textSelection(.enabled)
         }
+        .font(.caption)
         .disabled(model.isBusy)
-    }
-
-    private var optionsPage: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Custom buttons").font(.headline)
-                Text("Enter one action-id | Button Title per line.")
-                AuthoringTextEditor(text: $model.actionLines, label: "Custom buttons, action ID and title per line", monospaced: true)
-                    .frame(height: 68)
-                Toggle("Allow buttons to write the clipboard", isOn: $model.allowsClipboardWrite)
-                    .font(.body)
-                Text("Only a custom button can write to the clipboard. Samples leave your clipboard unchanged.")
-                Divider().padding(.vertical, 3)
-                Text("Tool options").font(.headline)
-                Text("Enter an array of options in JSON. Each option has an id, label and defaultValue. For a choice list, add choices with an id and label.")
-                AuthoringTextEditor(text: $model.optionsJSON, label: "Custom tool options JSON", monospaced: true)
-                    .frame(height: 100)
-                DisclosureGroup("Example option") {
-                    Text(#"[{"id":"uppercase","label":"Uppercase","defaultValue":"false"}]"#)
-                        .font(.system(.caption, design: .monospaced))
-                        .textSelection(.enabled)
-                }
-                Divider().padding(.vertical, 3)
-                Text("Generator").font(.headline)
-                TextField("Regenerate button title", text: $model.regenerateTitle)
-                    .textFieldStyle(.roundedBorder)
-                    .font(.body)
-                Text("Leave the title empty for a text tool. Generators use api.seed to keep a result until Regenerate is pressed.")
-            }
-            .font(.callout)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(2)
-            .disabled(model.isBusy)
-        }
     }
 }

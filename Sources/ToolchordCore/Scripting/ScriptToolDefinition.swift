@@ -29,6 +29,7 @@ public struct ScriptToolDefinition: Codable, Sendable, Hashable, Identifiable {
     public var regenerateTitle: String?
     public var options: [ScriptOption]?
     public var capabilities: [String]
+    public var palette: ScriptPalette?
 
     public init(id: String, title: String, summary: String = "", source: String,
                 actions: [ScriptToolAction] = [], capabilities: [String] = []) {
@@ -40,16 +41,20 @@ public struct ScriptToolDefinition: Codable, Sendable, Hashable, Identifiable {
         self.capabilities = capabilities
     }
 
-    public func validate() throws {
-        guard apiVersion == 1 else { throw ScriptFailure("This tool needs an unsupported API version.") }
+    /// Checks the header without parsing or executing JavaScript.
+    public func validateMetadata() throws {
         guard Self.isValidToolID(id) else {
             throw ScriptFailure("Use a built-in tool identifier or a valid custom. identifier.")
         }
+        try validateHeaderFields()
+    }
+
+    // Loading signed resources establishes the allowlist used by validateMetadata().
+    private func validateHeaderFields() throws {
+        guard apiVersion == 1 else { throw ScriptFailure("This tool needs an unsupported API version.") }
+        try palette?.validate()
         guard !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, title.count <= 100,
               summary.count <= 500 else { throw ScriptFailure("Give the tool a short title and description.") }
-        guard !source.isEmpty, source.utf8.count <= 128 * 1024 else {
-            throw ScriptFailure("Enter JavaScript source of up to 128 KiB.")
-        }
         guard Set(capabilities).isSubset(of: ["clipboard.write"]), Set(capabilities).count == capabilities.count else {
             throw ScriptFailure("Unrecognized or duplicate tool capability.")
         }
@@ -68,6 +73,13 @@ public struct ScriptToolDefinition: Codable, Sendable, Hashable, Identifiable {
             throw ScriptFailure("Choose up to 16 uniquely named options.")
         }
         for option in declaredOptions { _ = try option.toolOption() }
+    }
+
+    public func validate() throws {
+        try validateMetadata()
+        guard !source.isEmpty, source.utf8.count <= 128 * 1024 else {
+            throw ScriptFailure("Enter JavaScript source of up to 128 KiB.")
+        }
         // Parse without executing any tool code in the application process.
         guard let context = JSGlobalContextCreate(nil), let script = JSStringCreateWithCFString(source as CFString) else {
             throw ScriptFailure("The JavaScript parser is unavailable.")
@@ -97,29 +109,57 @@ public struct ScriptToolDefinition: Codable, Sendable, Hashable, Identifiable {
 
     public func command() throws -> ToolCommand {
         try validate()
-        let makeSeed: (@Sendable (SeedContext) -> String)?
-        if regenerateTitle != nil {
-            makeSeed = { ScriptWorker.captureSeed($0) }
-        } else { makeSeed = nil }
-        // Built-in identity preserves palette presentation and ranking. Code from
-        // any editable document, including a built-in override, runs in the worker.
-        let bundled = ToolCatalog.command(id: id)
-        var command = ToolCommand(id: id, title: title, summary: summary,
-                                  group: bundled?.group ?? .init(id: "custom", name: "Custom"),
-                                  icon: bundled?.icon ?? .symbol("curlybraces"), aliases: bundled?.aliases ?? [],
-                                  input: regenerateTitle == nil ? .text : .none,
-                                  options: try (options ?? []).map { try $0.toolOption() },
-                                  copyNoun: bundled?.copyNoun ?? { _ in "result" },
-                                  affinity: bundled?.affinity ?? { _ in 0 },
-                                  makeSeed: makeSeed, regenerateTitle: regenerateTitle) { request in
-            ScriptWorker.run(id: id, source: source, request: request, requiresActionHandler: !actions.isEmpty)
+        // Older overrides used the bundled command's search and presentation metadata.
+        let presentation = palette ?? ToolCatalog.bundledDefinitions.first { $0.id == id }?.palette ?? ScriptPalette()
+        return try makeCommand(presentation: presentation, execution: .worker)
+    }
+
+    /// Called only while loading the app bundle, never for a local definition with a matching ID.
+    func bundledCommand() throws -> ToolCommand {
+        try validateHeaderFields()
+        return try makeCommand(presentation: palette ?? ScriptPalette(), execution: .bundled)
+    }
+
+    private enum Execution { case bundled, worker }
+
+    private func makeCommand(presentation: ScriptPalette, execution: Execution) throws -> ToolCommand {
+        let seed: (@Sendable (SeedContext) -> String)?
+        if regenerateTitle == nil {
+            seed = nil
+        } else {
+            switch execution {
+            case .bundled: seed = { (try? ScriptRuntime.seed(id: id, source: source, context: $0)) ?? "" }
+            case .worker: seed = { ScriptWorker.captureSeed($0) }
+            }
         }
+        @Sendable func run(_ request: ToolRequest, action: String? = nil) -> ToolResult {
+            switch execution {
+            case .bundled:
+                do {
+                    let bytes = try ScriptRuntime.evaluate(id: id, source: source, request: request, action: action,
+                                                           requiresActionHandler: !actions.isEmpty)
+                    if request.cancellation.isCancelled { return .cancelled }
+                    return try ScriptRuntime.result(bytes, limits: request.limits)
+                } catch is CancellationError { return .cancelled }
+                catch { return .invalid(ToolDiagnostic(error.localizedDescription)) }
+            case .worker:
+                return ScriptWorker.run(id: id, source: source, request: request, action: action,
+                                        requiresActionHandler: !actions.isEmpty)
+            }
+        }
+        var command = try ToolCommand(
+            id: id, title: title, summary: summary, group: presentation.toolGroup, icon: presentation.icon,
+            aliases: presentation.aliases ?? [], input: regenerateTitle == nil ? .text : .none,
+            options: (options ?? []).map { try $0.toolOption() }, copyNoun: presentation.copyNoun(for:),
+            affinity: presentation.affinity(for:), makeSeed: seed, regenerateTitle: regenerateTitle,
+            evaluate: { run($0) }
+        )
         command.scriptActions = actions
         command.scriptActionHandler = { action, request in
             guard capabilities.contains("clipboard.write"), actions.contains(where: { $0.id == action }) else {
                 return .unsupported("This tool has no such clipboard action.")
             }
-            return ScriptWorker.run(id: id, source: source, request: request, action: action)
+            return run(request, action: action)
         }
         return command
     }

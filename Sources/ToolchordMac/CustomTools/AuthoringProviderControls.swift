@@ -8,6 +8,11 @@ struct AuthoringProviderControls: View {
     private var addressChanged: Bool { settings.selected == .endpoint && workspace.providerAddress != settings.endpoint }
     private var keyChanged: Bool { settings.selected == .endpoint && !workspace.providerKey.isEmpty }
 
+    private var generateTitle: String {
+        if model.isRevisingTool { return "Generate Update" }
+        return settings.selected == .apple ? "Generate on This Mac" : "Generate Tool"
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
@@ -40,7 +45,7 @@ struct AuthoringProviderControls: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            Button(settings.selected == .apple ? "Generate on This Mac" : "Generate Tool") { model.generate() }
+            Button(generateTitle) { model.generate() }
                 .disabled(model.isBusy || model.description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                           || model.unavailableReason != nil || addressChanged || keyChanged)
         }

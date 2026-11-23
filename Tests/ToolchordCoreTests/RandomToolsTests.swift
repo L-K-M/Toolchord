@@ -22,7 +22,7 @@ import Testing
 
     private func map(_ bytes: [UInt8], to alphabet: String, length: Int) throws -> String? {
         let js = try #require(JSContext())
-        js.evaluateScript(try BundledScripts.sourceFile("random"))
+        js.evaluateScript(try #require(ToolCatalog.bundledScriptText(id: "random.string")))
         let value = try #require(js.objectForKeyedSubscript("mapBytes")?.call(withArguments: [bytes, alphabet, length]))
         return value.isNull ? nil : value.toString()
     }

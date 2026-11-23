@@ -7,8 +7,8 @@ enum AuthoringPrompt {
         if isNew {
             context = "Create a new tool. Start with empty options and actions unless requested."
         } else {
-            // Shared bundled programs dispatch on api.id. A user-created tool's
-            // private document identifier is unnecessary for a revision.
+            // Older built-in customizations can dispatch on api.id. Keep that ID
+            // available for revisions without sending a custom tool’s identifier.
             let commandContext = ToolCatalog.command(id: current.id) == nil ? ""
                 : "For this built-in command, api.id is \(current.id). Revise the behavior for that ID.\n"
             let encoder = JSONEncoder()

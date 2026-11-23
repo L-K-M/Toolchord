@@ -17,7 +17,7 @@ import Testing
     }
 
     private func seed(_ id: String, milliseconds: Int64, bytes: [UInt8]) throws -> String {
-        try ScriptRuntime.seed(id: id, source: BundledScripts.sourceFile("uuid"),
+        try ScriptRuntime.seed(id: id, source: #require(ToolCatalog.bundledScriptText(id: id)),
                                context: SeedContext(now: Date(timeIntervalSince1970: Double(milliseconds) / 1000)),
                                entropy: bytes)
     }

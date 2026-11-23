@@ -10,6 +10,45 @@ import ToolchordCore
         override var attachedSheet: NSWindow? { simulatedSheet }
     }
 
+    @Test func openRunSaveAndExportAHandwrittenJavaScriptTool() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let store = ScriptToolStore(directoryURL: folder.appendingPathComponent("Library"))
+        let library = CustomToolLibrary(store: store)
+        let controller = ToolEditorWindow(library: library, didClose: {})
+        let tool = folder.appendingPathComponent("greet.js")
+        let source = """
+        /* @toolchord
+        {
+          "apiVersion": 1, "id": "custom.greet", "title": "Greet", "summary": "",
+          "options": [{"id":"upper","label":"Shout","defaultValue":"false"}],
+          "actions": [], "capabilities": [], "author": "Example"
+        }
+        */
+        function preview(input, options) {
+          return options.upper === "true" ? input.toUpperCase() : input;
+        }
+        """
+        try Data(source.utf8).write(to: tool)
+        controller.open(tool)
+        let editor = controller.editor
+        #expect(editor.scriptText == source)
+        #expect(editor.declaredOptions.first?.label == "Shout")
+        let updated = source.replacingOccurrences(of: #""defaultValue":"false""#, with: #""defaultValue":"true""#)
+        editor.scriptText = updated
+        editor.sampleInput = "Hello"
+        controller.runSample()
+        await editor.waitForIdle()
+        #expect(editor.trialResult?.output?.primaryText == "HELLO")
+        try #require(editor.save())
+        #expect(try Data(contentsOf: store.directoryURL.appendingPathComponent("custom.greet.js")) == Data(updated.utf8))
+        let exported = folder.appendingPathComponent("export.js")
+        try editor.exportTool(to: exported)
+        #expect(try Data(contentsOf: exported) == Data(updated.utf8))
+        #expect(try Data(contentsOf: tool) == Data(source.utf8))
+    }
+
     @Test func finderOpenWaitsForTheExportSheet() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }

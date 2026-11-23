@@ -10,8 +10,9 @@ import Testing
         let entropy = (0..<512).map { UInt8(truncatingIfNeeded: $0) }
 
         for (original, signed) in zip(definitions, ToolCatalog.commands) {
-            let bytes = try JSONEncoder().encode(original)
-            let document = try JSONDecoder().decode(ScriptToolDefinition.self, from: bytes)
+            let text = try #require(ToolCatalog.bundledScriptText(id: signed.id))
+            let document = try ToolScriptDocument(text: text).definition
+            #expect(document == original)
             let editable = try document.command()
             let sample = sampleText(for: signed)
             let profile = InputDetector.profile(for: sample)
@@ -41,6 +42,36 @@ import Testing
             #expect(actual == expected, "\(signed.id): \(actual)")
             if signed.id == "random.string" { #expect(actual.output?.sensitivity == .secret) }
         }
+    }
+
+    @Test func copyingABundledFileKeepsItsBehaviorAndUsesItsEditedHeader() throws {
+        let source = try #require(ToolCatalog.bundledScriptText(id: "color.rgb"))
+        var definition = try ToolScriptDocument(text: source).definition
+        definition.id = "custom.my-color"
+        var palette = ScriptPalette()
+        palette.aliases = ["my colors"]
+        palette.group = "design"
+        palette.groupTitle = "Design"
+        palette.copyNoun = "swatch"
+        palette.suggestions = [.init(when: ["hexColor"], score: 71)]
+        definition.palette = palette
+        let copy = try definition.command()
+        #expect(copy.run(.init(text: "#f80")).output?.primaryText == "rgb(255, 136, 0)")
+        #expect(copy.group == ToolGroup(id: "design", name: "Design"))
+        #expect(copy.aliases == ["my colors"])
+        #expect(copy.copyAndCloseTitle(options: ToolOptions()) == "Copy swatch & Close")
+        #expect(copy.affinity(InputDetector.profile(for: "#f80")) == 71)
+    }
+
+    @Test func overrideWithoutPaletteMetadataInheritsTheBundledPresentation() throws {
+        let signed = try #require(ToolCatalog.command(id: "color.rgb"))
+        let source = try #require(ToolCatalog.bundledScriptText(id: signed.id))
+        var definition = try ToolScriptDocument(text: source).definition
+        definition.palette = nil
+        let override = try definition.command()
+        #expect(override.aliases == signed.aliases)
+        #expect(override.group == signed.group)
+        #expect(override.affinity(InputDetector.profile(for: "#f80")) == signed.affinity(InputDetector.profile(for: "#f80")))
     }
 
     @Test func builtInIdentityStillUsesWorkerResultValidation() throws {

@@ -8,7 +8,7 @@ struct ToolLibrarySidebar: View {
 
     var body: some View {
         let query = filter.trimmingCharacters(in: .whitespacesAndNewlines)
-        let matches = model.library.definitions.filter { matchesFilter($0, query: query) }
+        let matches = model.library.definitions.filter { Self.matchesFilter($0, query: query) }
         let custom = matches.filter { ToolCatalog.command(id: $0.id) == nil }
         let builtIn = matches.filter { ToolCatalog.command(id: $0.id) != nil }
         let selectionIsVisible = model.documentID == "new" || matches.contains { $0.id == model.documentID }
@@ -65,11 +65,17 @@ struct ToolLibrarySidebar: View {
         model.definition.title.isEmpty ? "Untitled Tool" : model.definition.title
     }
 
-    private func matchesFilter(_ tool: ScriptToolDefinition, query: String) -> Bool {
+    static func matchesFilter(_ tool: ScriptToolDefinition, query: String) -> Bool {
         if query.isEmpty { return true }
-        if [tool.title, tool.id, tool.summary].contains(where: { $0.localizedStandardContains(query) }) { return true }
-        guard let original = ToolCatalog.command(id: tool.id) else { return false }
-        return ([original.title, original.group.name] + original.aliases).contains { $0.localizedStandardContains(query) }
+        var terms = [tool.title, tool.id, tool.summary]
+        if let palette = tool.palette {
+            terms += [palette.group, palette.groupTitle].compactMap { $0 }
+            terms += palette.aliases ?? []
+        }
+        if let original = ToolCatalog.command(id: tool.id) {
+            terms += [original.title, original.group.name] + original.aliases
+        }
+        return terms.contains { $0.localizedStandardContains(query) }
     }
 
     private func toolRows(_ tools: [ScriptToolDefinition]) -> some View {

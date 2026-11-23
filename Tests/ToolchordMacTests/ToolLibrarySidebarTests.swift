@@ -5,6 +5,26 @@ import ToolchordCore
 
 @MainActor
 @Suite struct ToolLibrarySidebarTests {
+    @Test func filterFindsSavedHeaderMetadataAndTheOriginalBuiltInName() throws {
+        let original = try #require(ToolCatalog.bundledDefinitions.first { $0.id == "color.rgb" })
+        var tool = original
+        tool.title = "Swatch Inspector"
+        tool.summary = ""
+        var palette = ScriptPalette()
+        palette.aliases = ["check swatch"]
+        palette.group = "paint-room"
+        palette.groupTitle = "Design Studio"
+        tool.palette = palette
+
+        for id in [original.id, "custom.swatch"] {
+            tool.id = id
+            for query in ["Swatch Inspector", "CHECK SWATCH", "paint-room", "Design Studio"] {
+                #expect(ToolLibrarySidebar.matchesFilter(tool, query: query), "\(query) should find \(id)")
+            }
+            #expect(ToolLibrarySidebar.matchesFilter(tool, query: original.title) == (id == original.id))
+        }
+    }
+
     @Test func filteringByAliasAndPressingReturnOpensTheBuiltInScript() async throws {
         _ = NSApplication.shared
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -40,9 +60,10 @@ import ToolchordCore
         fieldEditor.doCommand(by: #selector(NSResponder.insertNewline(_:)))
         try await layout()
         #expect(controller.editor.documentID == "json.validate")
-        let script = try #require(descendant(NSTextView.self, in: content) { $0.accessibilityLabel() == "Custom tool JavaScript" })
+        let script = try #require(descendant(NSTextView.self, in: content) { $0.accessibilityLabel() == "Tool JavaScript file" })
         #expect(script.isEditable)
-        #expect(script.string == controller.editor.definition.source)
+        #expect(script.string == controller.editor.scriptText)
+        #expect(try ToolScriptDocument(text: script.string).definition == controller.editor.definition)
 
         // Opening a different tool from the palette must reveal its row even
         // when a previous library filter excluded it.

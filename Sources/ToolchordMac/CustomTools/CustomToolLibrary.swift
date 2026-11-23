@@ -53,15 +53,15 @@ final class CustomToolLibrary {
     }
 
     func document(for id: String) throws -> PortableToolFile {
-        if installedCommands[id] == nil, let bundled = CustomToolCatalog.bundledByID[id] {
-            return try PortableToolFile(data: PortableToolFile.encode(bundled))
+        if installedCommands[id] == nil, let text = ToolCatalog.bundledScriptText(id: id) {
+            return try PortableToolFile(scriptText: text)
         }
         guard let store else { throw ToolDiagnostic(loadProblem ?? "Tool storage is unavailable.") }
         return try store.document(for: id)
     }
 
     func save(_ definition: ScriptToolDefinition, replacing expected: ScriptToolDefinition?,
-              preserving original: PortableToolFile? = nil) throws {
+              preserving original: PortableToolFile? = nil, edited: PortableToolFile? = nil) throws {
         guard let store else { throw ToolDiagnostic(loadProblem ?? "Tool storage is unavailable.") }
         let localVersion: ScriptToolDefinition?
         if installedCommands[definition.id] == nil, let bundled = CustomToolCatalog.bundledByID[definition.id] {
@@ -74,7 +74,7 @@ final class CustomToolLibrary {
             localVersion = expected
         }
         let command = try command(for: definition, previous: definitions.first { $0.id == definition.id })
-        guard try store.save(definition, replacing: localVersion, preserving: original) else { return }
+        guard try store.save(definition, replacing: localVersion, preserving: original, edited: edited) else { return }
         installedCommands[definition.id] = command
         publish(definition)
     }

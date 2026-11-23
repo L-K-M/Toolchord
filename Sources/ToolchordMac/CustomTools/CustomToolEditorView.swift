@@ -41,11 +41,11 @@ struct CustomToolEditorView: View {
                         .frame(minWidth: 144, idealWidth: 208, maxWidth: 300)
                 }
                 CustomToolDetailView(model: model, workspace: workspace)
-                    .id(model.definition.id)
+                    .id(model.workspaceID)
                     .frame(minWidth: 380, maxWidth: .infinity, maxHeight: .infinity)
                 if workspace.showsInspector {
                     CustomToolSampleInspector(model: model)
-                        .id(model.definition.id)
+                        .id(model.workspaceID)
                         .frame(minWidth: 218, idealWidth: 274, maxWidth: 440, maxHeight: .infinity)
                 }
             }
@@ -69,14 +69,14 @@ struct CustomToolEditorView: View {
         HStack(spacing: 7) {
             if model.isBusy {
                 ProgressView().controlSize(.small)
-                Text(model.isGenerating ? "Generating tool…" : "Running sample…")
+                Text(model.isGenerating ? "Generating draft…" : "Running sample…")
             } else if let message = model.message {
                 Image(systemName: model.isError ? "exclamationmark.triangle" : "info.circle")
                     .foregroundStyle(model.isError ? Color.orange : Color.secondary)
                 Text(message).textSelection(.enabled)
             } else {
                 Text(model.hasPendingDescription
-                     ? "Generate your description to apply it to this tool."
+                     ? "Generate a draft from your instructions."
                      : "Run a sample successfully to enable Save.")
             }
             Spacer(minLength: 0)
