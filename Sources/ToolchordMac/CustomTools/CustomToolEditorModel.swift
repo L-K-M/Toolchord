@@ -7,11 +7,11 @@ import ToolchordCore
 final class CustomToolEditorModel {
     let library: CustomToolLibrary
     let providers: AuthoringProviderSettings
-    var definition: ScriptToolDefinition { didSet { authoringChanged() } }
-    var actionLines: String { didSet { authoringChanged() } }
-    var allowsClipboardWrite: Bool { didSet { authoringChanged() } }
-    var optionsJSON: String { didSet { authoringChanged() } }
-    var regenerateTitle: String { didSet { authoringChanged() } }
+    /// The complete file is the editable state. Keep the last readable title while a header is incomplete.
+    var scriptText: String { didSet { authoringChanged() } }
+    private(set) var definition: ScriptToolDefinition
+    private(set) var workspaceID: String
+    private(set) var scriptProblem: String?
     var sampleOptions: [String: String] = [:] { didSet { invalidateTrial() } }
     var sampleInput = " Hello, Toolchord! " { didSet { invalidateTrial() } }
     var description = ""
@@ -27,12 +27,15 @@ final class CustomToolEditorModel {
     @ObservationIgnored private let externalGenerator: (String, String, String) -> any ScriptGenerating
     @ObservationIgnored let undoManager = UndoManager()
     @ObservationIgnored private var originalFile: PortableToolFile?
+    // A portable import can match an installed tool but use different header formatting.
+    @ObservationIgnored private var installedAtImport: PortableToolFile?
     @ObservationIgnored private var saveRevision = 0
     @ObservationIgnored private var recoveryTask: Task<Void, Never>?
-    private var baseline: Data?
-    @ObservationIgnored private var successfulTrial: Data?
+    private var baseline: String?
+    private var successfulTrial = false
+    @ObservationIgnored private var trialRevision = UUID()
     /// Actions tested after a preview use the same captured clock and entropy.
-    @ObservationIgnored private var previewRequest: (fingerprint: Data, request: ToolRequest)?
+    @ObservationIgnored private var previewRequest: ToolRequest?
     @ObservationIgnored private var workID = UUID()
     @ObservationIgnored private var workTask: Task<Void, Never>?
 
@@ -49,13 +52,13 @@ final class CustomToolEditorModel {
         let existing = library.definitions.first { $0.id == id }
         let initial = existing ?? Self.newDefinition()
         expected = existing
-        originalFile = existing.flatMap { try? library.document(for: $0.id) }
+        workspaceID = initial.id
         definition = initial
-        actionLines = Self.lines(for: initial.actions)
-        allowsClipboardWrite = initial.capabilities.contains("clipboard.write")
-        optionsJSON = Self.optionJSON(initial.options)
-        regenerateTitle = initial.regenerateTitle ?? ""
-        baseline = try? Self.fingerprint(initial)
+        scriptText = ""
+        load(existing, content: initial)
+        // Give the window a chance to restore a previous journal before any autosave.
+        recoveryTask?.cancel()
+        recoveryTask = nil
     }
 
     var unavailableReason: String? {
@@ -67,9 +70,9 @@ final class CustomToolEditorModel {
     var documentID: String { expected?.id ?? "new" }
     var hasPendingDescription: Bool { !description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     var isDirty: Bool { hasPendingDescription || hasDefinitionChanges }
-    var canSave: Bool { !isBusy && successfulTrial != nil && successfulTrial == (try? fingerprintForTrial()) }
-    var draftActions: [ScriptToolAction] { (try? draft().actions) ?? [] }
-    var declaredOptions: [ScriptOption] { (try? JSONDecoder().decode([ScriptOption].self, from: Data(optionsJSON.utf8))) ?? [] }
+    var canSave: Bool { !isBusy && successfulTrial }
+    var draftActions: [ScriptToolAction] { scriptProblem == nil ? definition.actions : [] }
+    var declaredOptions: [ScriptOption] { scriptProblem == nil ? definition.options ?? [] : [] }
 
     func selectDocument(_ id: String) {
         guard id != documentID else { return }
@@ -97,7 +100,7 @@ final class CustomToolEditorModel {
                 load(nil, content: originalFile.definition, source: originalFile)
                 baseline = nil
             } else {
-                load(nil, content: Self.newDefinition(id: definition.id))
+                load(nil, content: Self.newDefinition(id: workspaceID))
             }
         } else if let latest {
             load(latest)
@@ -113,7 +116,7 @@ final class CustomToolEditorModel {
     func restoreBuiltIn() {
         guard !isBusy, let expected, library.isModifiedBuiltIn(id: expected.id),
               let bundled = CustomToolCatalog.bundledByID[expected.id] else { return }
-        guard let originalFile else {
+        guard let originalFile = installedAtImport ?? originalFile else {
             report("Reopen the saved tool to load its current version before restoring.", error: true)
             return
         }
@@ -147,9 +150,10 @@ final class CustomToolEditorModel {
             throw ScriptToolStore.Error.document(url.lastPathComponent, library.loadProblem ?? "Couldn’t read the tool library.")
         }
         let existing = library.definitions.first { $0.id == file.definition.id }
+        let installed = try existing.map { try library.document(for: $0.id) }
         let matchesInstalled: Bool
-        if let existing {
-            matchesInstalled = try file.hasSameContent(as: library.document(for: existing.id))
+        if let existing, let installed {
+            matchesInstalled = try file.hasSameContent(as: installed)
             // A portable customization can be tried against the shipped tool. An
             // already customized or user-created tool keeps its collision protection.
             if !matchesInstalled && (ToolCatalog.command(id: existing.id) == nil || library.isModifiedBuiltIn(id: existing.id)) {
@@ -160,15 +164,19 @@ final class CustomToolEditorModel {
             matchesInstalled = false
         }
         load(existing, content: file.definition, source: file)
-        // Also mark imports differing only in extension fields as unsaved.
-        if !matchesInstalled { baseline = nil }
+        if let installed, installed.original != file.original { installedAtImport = installed }
+        baseline = matchesInstalled ? try installed?.scriptText(for: file.definition) : nil
         undoManager.removeAllActions()
         flushRecovery()
     }
 
     func exportTool(to url: URL) throws {
         do {
-            try PortableToolFile.export(draft(), preserving: originalFile, to: url)
+            let current = try draft()
+            let edited = try PortableToolFile(scriptText: scriptText)
+            // A legacy Open/Export with no semantic edits preserves the original JSON bytes.
+            let keepOriginal = try url.pathExtension.lowercased() != "js" && originalFile?.hasSameContent(as: edited) == true
+            try PortableToolFile.export(current, preserving: keepOriginal ? originalFile : edited, to: url)
         } catch {
             throw ScriptToolStore.Error.document(url.lastPathComponent, Self.message(for: error))
         }
@@ -181,8 +189,9 @@ final class CustomToolEditorModel {
         guard let url = library.recoveryURL else { return }
         do {
             if hasDefinitionChanges {
-                let recovery = EditorDraftFields.Recovery(fields: fields, expected: expected, baseline: baseline,
-                                                          originalDocument: originalFile?.original)
+                let recovery = EditorDraftRecovery(scriptText: scriptText, workspaceID: workspaceID, expected: expected,
+                                                   baselineText: baseline, originalDocument: originalFile?.original,
+                                                   installedAtImport: installedAtImport?.original)
                 try recovery.write(to: url)
             } else if FileManager.default.fileExists(atPath: url.path) {
                 try FileManager.default.removeItem(at: url)
@@ -197,12 +206,22 @@ final class CustomToolEditorModel {
         guard !isBusy, !isDirty, let url = library.recoveryURL,
               FileManager.default.fileExists(atPath: url.path) else { return false }
         do {
-            let recovery = try JSONDecoder().decode(EditorDraftFields.Recovery.self, from: Data(contentsOf: url))
-            let original = try recovery.originalDocument.map(PortableToolFile.init(data:))
+            let recovery = try JSONDecoder().decode(EditorDraftRecovery.self, from: Data(contentsOf: url))
+            var original = try recovery.originalDocument.map(PortableToolFile.init(data:))
+            // Early journals recorded only the typed version. Recover its save token
+            // when the installed file still matches, including any extension metadata.
+            if original == nil, let expected = recovery.expected, let installed = try? library.document(for: expected.id) {
+                let recorded = try PortableToolFile(data: PortableToolFile.encode(expected))
+                if try recorded.hasSameContent(as: installed) { original = installed }
+            }
+            let installed = try recovery.installedAtImport.map(PortableToolFile.init(data:))
             expected = recovery.expected
-            baseline = recovery.baseline
+            installedAtImport = installed
+            baseline = recovery.baselineText
             originalFile = original
-            apply(recovery.fields)
+            workspaceID = recovery.workspaceID
+            definition = original?.definition ?? expected ?? Self.newDefinition(id: workspaceID)
+            scriptText = recovery.scriptText
             description = ""
             sampleOptions = [:]
             undoManager.removeAllActions()
@@ -220,12 +239,17 @@ final class CustomToolEditorModel {
         guard unavailableReason == nil else { report(unavailableReason ?? "Generation is unavailable.", error: true); return }
         let prompt = description.trimmingCharacters(in: .whitespacesAndNewlines)
         let submittedDescription = description
+        let submittedScript = scriptText
         guard !prompt.isEmpty, prompt.utf8.count <= 4096 else {
             report("Enter a request between 1 and 4,096 bytes.", error: true)
             return
         }
         let current: ScriptToolDefinition
-        do { current = try draft() } catch { report(Self.message(for: error), error: true); return }
+        let submittedFile: PortableToolFile
+        do {
+            current = try draft()
+            submittedFile = try PortableToolFile(scriptText: scriptText)
+        } catch { report(Self.message(for: error), error: true); return }
         isGenerating = true
         message = nil
         let id = UUID()
@@ -243,15 +267,18 @@ final class CustomToolEditorModel {
                     self.report("The provider or model changed. Run Generate again with the current selection.", error: true)
                     return
                 }
+                guard self.scriptText.hasSameUTF8(as: submittedScript) else {
+                    self.isGenerating = false
+                    self.report("The script changed during generation. Run Generate again to update your latest edits.", error: true)
+                    return
+                }
                 // Generation revises content, never the document identity.
                 generated.id = current.id
+                generated.palette = current.palette
                 try generated.validate()
+                let updated = try submittedFile.scriptText(for: generated)
                 let before = self.captureUndoState()
-                self.definition = generated
-                self.actionLines = Self.lines(for: generated.actions)
-                self.allowsClipboardWrite = generated.capabilities.contains("clipboard.write")
-                self.optionsJSON = Self.optionJSON(generated.options)
-                self.regenerateTitle = generated.regenerateTitle ?? ""
+                self.scriptText = updated
                 self.sampleOptions = [:]
                 if self.description.hasSameUTF8(as: submittedDescription) { self.description = "" }
                 self.isGenerating = false
@@ -276,15 +303,17 @@ final class CustomToolEditorModel {
         }
         do {
             let current = try draft()
-            try library.save(current, replacing: expected, preserving: originalFile)
+            let edited = try PortableToolFile(scriptText: scriptText)
+            if expected != nil && originalFile == nil {
+                throw ToolDiagnostic("Reopen this tool to load its saved file before updating it.")
+            }
+            try library.save(current, replacing: expected, preserving: installedAtImport ?? originalFile, edited: edited)
             saveRevision += 1
             expected = current
-            definition = current
-            baseline = try Self.fingerprint(current)
-            if let savedFile = try? library.document(for: current.id),
-               (try? originalFile?.hasSameContent(as: savedFile)) != true {
-                originalFile = savedFile
-            }
+            baseline = scriptText
+            originalFile = edited
+            installedAtImport = nil
+            invalidateTrial()
             flushRecovery()
             report("Saved. Your tool is available in the palette.")
             return true
@@ -316,52 +345,41 @@ final class CustomToolEditorModel {
     private enum TrialMode: Sendable { case preview, action(String) }
 
     private var hasDefinitionChanges: Bool {
-        guard let baseline, let current = try? Self.fingerprint(draft()) else { return true }
-        return current != baseline
-    }
-
-    private var fields: EditorDraftFields {
-        EditorDraftFields(definition: definition, actionLines: actionLines, optionsJSON: optionsJSON,
-                       regenerateTitle: regenerateTitle, allowsClipboardWrite: allowsClipboardWrite)
-    }
-
-    private func apply(_ saved: EditorDraftFields) {
-        definition = saved.definition
-        actionLines = saved.actionLines
-        optionsJSON = saved.optionsJSON
-        regenerateTitle = saved.regenerateTitle
-        allowsClipboardWrite = saved.allowsClipboardWrite
+        guard let baseline else { return true }
+        return !baseline.hasSameUTF8(as: scriptText)
     }
 
     private struct UndoState {
-        let fields: EditorDraftFields
+        let scriptText: String
         let description: String
         let sampleOptions: [String: String]
         let file: PortableToolFile?
+        let installedAtImport: PortableToolFile?
         let expected: ScriptToolDefinition?
-        let baseline: Data?
+        let baseline: String?
         let saveRevision: Int
     }
 
     private func captureUndoState() -> UndoState {
-        UndoState(fields: fields, description: description, sampleOptions: sampleOptions, file: originalFile,
-                  expected: expected, baseline: baseline, saveRevision: saveRevision)
+        UndoState(scriptText: scriptText, description: description, sampleOptions: sampleOptions, file: originalFile,
+                  installedAtImport: installedAtImport, expected: expected, baseline: baseline, saveRevision: saveRevision)
     }
 
     private func registerUndo(_ previous: UndoState, name: String) {
         undoManager.registerUndo(withTarget: self) { editor in
             editor.cancelWork()
             editor.registerUndo(editor.captureUndoState(), name: name)
-            editor.apply(previous.fields)
             editor.description = previous.description
             editor.sampleOptions = previous.sampleOptions
             // A Save between the edit and Undo establishes a new on-disk
             // version. Undo its contents without reviving a stale save token.
             if editor.saveRevision == previous.saveRevision {
                 editor.originalFile = previous.file
+                editor.installedAtImport = previous.installedAtImport
                 editor.expected = previous.expected
                 editor.baseline = previous.baseline
             }
+            editor.scriptText = previous.scriptText
             editor.message = nil
         }
         undoManager.setActionName(name)
@@ -369,6 +387,28 @@ final class CustomToolEditorModel {
 
     private func authoringChanged() {
         invalidateTrial()
+        do {
+            let parsed = try ToolScriptDocument(text: scriptText).definition
+            let installedID = expected?.id ?? originalFile?.definition.id
+            if let installedID {
+                guard parsed.id.hasSameUTF8(as: installedID) else {
+                    throw ToolDiagnostic("Keep this tool’s identifier \(installedID). Use New Tool to create a different tool.")
+                }
+            } else if !parsed.id.hasPrefix("custom.") {
+                throw ToolDiagnostic("Use a custom. identifier for a new tool. Select a built-in in the library to edit it.")
+            }
+            try parsed.validateMetadata()
+            if parsed.options != definition.options && !sampleOptions.isEmpty {
+                sampleOptions = sampleOptions.filter { id, value in
+                    guard let option = parsed.options?.first(where: { $0.id == id }) else { return false }
+                    return option.choices?.contains(where: { $0.id == value }) ?? ["true", "false"].contains(value)
+                }
+            }
+            definition = parsed
+            scriptProblem = nil
+        } catch {
+            scriptProblem = Self.message(for: error)
+        }
         recoveryTask?.cancel()
         recoveryTask = Task { [weak self] in
             do { try await Task.sleep(for: .milliseconds(350)) } catch { return }
@@ -380,11 +420,10 @@ final class CustomToolEditorModel {
         guard !isBusy else { return }
         let current: ScriptToolDefinition
         let command: ToolCommand
-        let fingerprint: Data
+        let revision = trialRevision
         do {
             current = try draft()
             command = try current.command()
-            fingerprint = try fingerprintForTrial()
         } catch { report(Self.message(for: error), error: true); return }
         let sample = sampleInput
         let options = sampleOptions
@@ -392,7 +431,7 @@ final class CustomToolEditorModel {
         switch mode {
         case .preview: reusedRequest = nil
         case .action:
-            reusedRequest = previewRequest?.fingerprint == fingerprint ? previewRequest?.request : nil
+            reusedRequest = previewRequest
         }
         guard sample.utf8.count <= ToolLimits.standard.maxInputBytes else {
             report(ToolLimits.standard.inputLimitMessage, error: true)
@@ -424,65 +463,29 @@ final class CustomToolEditorModel {
             }
             guard !Task.isCancelled, let self, self.workID == id else { return }
             self.isRunningTrial = false
-            guard (try? self.fingerprintForTrial()) == fingerprint else { return }
+            guard self.trialRevision == revision else { return }
             let result = completion.result
             self.trialResult = result
             if case .preview = mode {
                 self.trialWasAction = false
-                self.successfulTrial = result.isSuccess ? fingerprint : nil
-                self.previewRequest = result.isSuccess ? (fingerprint, completion.request) : nil
+                self.successfulTrial = result.isSuccess
+                self.previewRequest = result.isSuccess ? completion.request : nil
             } else {
                 self.trialWasAction = true
-                if !result.isSuccess { self.successfulTrial = nil }
+                if !result.isSuccess { self.successfulTrial = false }
             }
             self.report(result.isSuccess ? "Sample completed. Review the result before saving." : (result.problem ?? "The sample failed."), error: !result.isSuccess)
         }
     }
 
     private func draft() throws -> ScriptToolDefinition {
-        var current = definition
-        if !actionLines.hasSameUTF8(as: Self.lines(for: definition.actions)) {
-            current.actions = try actionLines.split(whereSeparator: \.isNewline).map { line in
-                let parts = line.split(separator: "|", maxSplits: 1, omittingEmptySubsequences: false)
-                guard parts.count == 2 else { throw ToolDiagnostic("Write each button as action-id | Button Title, one per line.") }
-                return ScriptToolAction(
-                    id: parts[0].trimmingCharacters(in: .whitespaces),
-                    title: parts[1].trimmingCharacters(in: .whitespaces)
-                )
-            }
-        }
-        current.capabilities = allowsClipboardWrite ? ["clipboard.write"] : []
-        do {
-            let options = try JSONDecoder().decode([ScriptOption].self, from: Data(optionsJSON.utf8))
-            current.options = options.isEmpty && definition.options == nil ? nil : options
-        } catch {
-            throw ToolDiagnostic("Check the options JSON. Use an array of choices or toggle definitions.")
-        }
-        let buttonTitle = regenerateTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !regenerateTitle.hasSameUTF8(as: definition.regenerateTitle ?? "") {
-            current.regenerateTitle = buttonTitle.isEmpty ? nil : buttonTitle
-        }
-        return current
-    }
-
-    private func fingerprintForTrial() throws -> Data {
-        var data = try Self.fingerprint(draft())
-        data.append(0)
-        data.append(contentsOf: sampleInput.utf8)
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys]
-        data.append(try encoder.encode(sampleOptions))
-        return data
-    }
-
-    private static func fingerprint(_ definition: ScriptToolDefinition) throws -> Data {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys]
-        return try encoder.encode(definition)
+        if let scriptProblem { throw ToolDiagnostic(scriptProblem) }
+        return definition
     }
 
     private func invalidateTrial() {
-        successfulTrial = nil
+        trialRevision = UUID()
+        successfulTrial = false
         previewRequest = nil
         trialResult = nil
     }
@@ -490,26 +493,24 @@ final class CustomToolEditorModel {
     private func load(_ existing: ScriptToolDefinition?, content: ScriptToolDefinition? = nil, source: PortableToolFile? = nil) {
         let value = content ?? existing ?? Self.newDefinition()
         expected = existing
-        originalFile = source ?? existing.flatMap { try? library.document(for: $0.id) }
+        workspaceID = value.id
         definition = value
-        actionLines = Self.lines(for: value.actions)
-        allowsClipboardWrite = value.capabilities.contains("clipboard.write")
-        optionsJSON = Self.optionJSON(value.options)
-        regenerateTitle = value.regenerateTitle ?? ""
         sampleOptions = [:]
         description = ""
-        baseline = try? Self.fingerprint(value)
         message = nil
-    }
-
-    private static func lines(for actions: [ScriptToolAction]) -> String {
-        actions.map { "\($0.id) | \($0.title)" }.joined(separator: "\n")
-    }
-
-    private static func optionJSON(_ options: [ScriptOption]?) -> String {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys, .prettyPrinted]
-        return (try? encoder.encode(options ?? [])).flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
+        isError = false
+        originalFile = nil
+        installedAtImport = nil
+        do {
+            if let source { originalFile = source }
+            else if let existing { originalFile = try library.document(for: existing.id) }
+            scriptText = try originalFile?.scriptText(for: value) ?? ToolScriptDocument.text(for: value)
+        } catch {
+            // Keep the program readable after a disk failure. Save requires the original version.
+            scriptText = (try? ToolScriptDocument.text(for: value)) ?? ""
+            report(Self.message(for: error), error: true)
+        }
+        baseline = scriptText
     }
 
     private func report(_ text: String, error: Bool = false) {

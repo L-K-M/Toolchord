@@ -20,6 +20,27 @@ import ToolchordCore
         #expect(!library.isModifiedBuiltIn(id: original.definition.id))
     }
 
+    @Test func rawHeaderFormattingIsSavedAndConcurrentFormattingIsProtected() throws {
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let store = ScriptToolStore(directoryURL: folder)
+        let library = CustomToolLibrary(store: store)
+        let signed = try library.document(for: "json.format")
+        let text = try signed.scriptText(for: signed.definition)
+        let edited = try PortableToolFile(scriptText: text.replacingOccurrences(of: "/* @toolchord\n", with: "/* @toolchord\n\n"))
+        try library.save(edited.definition, replacing: signed.definition, preserving: signed, edited: edited)
+        let destination = folder.appendingPathComponent("json.format.js")
+        #expect(try Data(contentsOf: destination) == edited.original)
+        let external = try PortableToolFile(scriptText: text.replacingOccurrences(of: "/* @toolchord\n", with: "/* @toolchord\n  "))
+        try external.original.write(to: destination, options: .atomic)
+        #expect(throws: ScriptToolStore.Error.updateConflict(signed.definition.id)) {
+            try library.save(edited.definition, replacing: edited.definition, preserving: edited, edited: edited)
+        }
+        #expect(throws: ScriptToolStore.Error.updateConflict(signed.definition.id)) {
+            try library.restoreBuiltIn(replacing: edited.definition, original: edited)
+        }
+        #expect(try Data(contentsOf: destination) == external.original)
+    }
+
     @Test func localEditReplacesOnePaletteCommandAndRestoringSurvivesRelaunch() throws {
         defer { try? FileManager.default.removeItem(at: folder) }
         let store = ScriptToolStore(directoryURL: folder)
@@ -103,18 +124,24 @@ import ToolchordCore
         let store = ScriptToolStore(directoryURL: folder)
         let library = CustomToolLibrary(store: store)
         let bundled = try library.document(for: "json.format")
-        var metadata = try #require(JSONSerialization.jsonObject(with: bundled.original) as? [String: Any])
+        var metadata = try #require(JSONSerialization.jsonObject(with: bundled.data(for: bundled.definition)) as? [String: Any])
         metadata["x-owner"] = "first"
         let imported = try PortableToolFile(data: JSONSerialization.data(withJSONObject: metadata))
         try library.save(bundled.definition, replacing: bundled.definition, preserving: imported)
         #expect(library.isModifiedBuiltIn(id: bundled.definition.id))
-        let file = folder.appendingPathComponent("json.format.json")
-        #expect(try Data(contentsOf: file) == imported.original)
+        let file = folder.appendingPathComponent("json.format.js")
+        let saved = try PortableToolFile(reading: file)
+        #expect(try saved.hasSameContent(as: imported))
         metadata["x-owner"] = "second"
-        let newer = try JSONSerialization.data(withJSONObject: metadata)
+        let updated = try PortableToolFile(data: JSONSerialization.data(withJSONObject: metadata))
+        let newer = Data(try updated.scriptText(for: updated.definition).utf8)
         try newer.write(to: file)
         #expect(throws: ScriptToolStore.Error.updateConflict(bundled.definition.id)) {
             try library.restoreBuiltIn(replacing: bundled.definition, original: imported)
+        }
+        // Editing a raw header is an explicit replacement of unknown fields too.
+        #expect(throws: ScriptToolStore.Error.updateConflict(bundled.definition.id)) {
+            try library.save(imported.definition, replacing: bundled.definition, preserving: saved, edited: imported)
         }
         #expect(try Data(contentsOf: file) == newer)
     }

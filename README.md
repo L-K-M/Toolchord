@@ -28,11 +28,11 @@ Paste something and Toolchord suggests the tools that fit it. Every result shows
 
 Search for **Make Custom Tool** in the palette. Describe a new tool, choose a provider and model, then press **⌘↵** to try the generated JavaScript on a sample. Press **⌘S** to add it to the palette.
 
-To change an existing command, select it under **Built-In Tools** or **My Tools** in the library. Edit its JavaScript in **Script**, run a sample, then save. A customized built-in takes its original place in the palette. Choose **Restore Built-In Version** to get the shipped tool back. [JavaScript tool API and example](docs/javascript-tools.md)
+To change an existing command, select it under **Built-In Tools** or **My Tools** in the library. In **Script**, edit the metadata comment or the JavaScript beneath it. Run a sample, then save. A customized built-in takes its original place in the palette. Choose **Restore Built-In Version** to get the shipped tool back. [JavaScript tool API and example](docs/javascript-tools.md)
 
 Toolchord detects installed **Codex CLI** and **Claude Code** and uses the selected harness’s existing sign-in. Choose **List Models**, type a model ID, or keep the harness default. If **Ollama** is installed, start its server and choose one of its models. For an **OpenAI-compatible endpoint**, enter the API base URL and optionally save a key in macOS Keychain. Apple Intelligence remains available offline on eligible Macs running macOS 26 or later. The other providers and the editor support macOS 14 or later.
 
-File ▸ Open Tool opens a working copy of a version-one JSON or `.toolchord` file. You can also open a `.toolchord` file from Finder or drop it on the editor. File ▸ Export Tool writes a portable copy. The library and exported files are independent. Toolchord recovers interrupted edits to a tool definition the next time you open the editor. Samples, generation prompts, and results stay out of the recovery file.
+Use **File ▸ Open Tool** or drop a `.js` file on the editor. Existing version-one `.toolchord` and JSON files can also be opened and edited. **File ▸ Export Tool** writes a portable JavaScript file by default. The library and exported files are independent. Toolchord recovers interrupted edits to a tool definition the next time you open the editor. Samples, generation prompts, and results stay out of the recovery file.
 
 ## Privacy
 
@@ -110,7 +110,7 @@ This renders palette states to `build/snapshots` for design review, including on
 | `Sources/ToolchordMac` | Panel, global shortcut, pasteboard, SwiftUI views, Settings, and the snapshot renderer |
 | `App`, `project.yml` | The app target: Info.plist keys, sandbox entitlements, and the Icon Composer icon |
 
-To add a bundled tool, declare it in `Sources/ToolchordCore/Scripts/catalog.json`, implement its JavaScript preview, and add fixtures for its behavior. See the [tool API](docs/javascript-tools.md).
+To add a bundled tool, put its JavaScript file in a family folder under `Sources/ToolchordCore/Scripts/` and add fixtures for its behavior. The filename includes its palette order and ID, such as `json/01-json.format.js`. [Tool file format](docs/javascript-tools.md)
 
 ## Documentation
 

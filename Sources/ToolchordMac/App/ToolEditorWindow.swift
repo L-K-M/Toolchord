@@ -104,7 +104,7 @@ final class ToolEditorWindow: NSWindowController, NSWindowDelegate, NSToolbarDel
     func chooseFile() {
         guard let window, window.attachedSheet == nil else { return }
         let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.toolchordTool, .json]
+        panel.allowedContentTypes = [.javaScript, .toolchordTool, .json]
         panel.prompt = "Open Tool"
         panel.beginSheetModal(for: window) { [weak self] response in
             if response == .OK, let url = panel.url { self?.open(url) }
@@ -155,8 +155,8 @@ final class ToolEditorWindow: NSWindowController, NSWindowDelegate, NSToolbarDel
     @objc func exportTool() {
         guard let window, window.attachedSheet == nil else { return }
         let panel = NSSavePanel()
-        panel.allowedContentTypes = [.toolchordTool]
-        panel.nameFieldStringValue = editor.definition.title + ".toolchord"
+        panel.allowedContentTypes = [.javaScript, .toolchordTool]
+        panel.nameFieldStringValue = editor.definition.title + ".js"
         panel.prompt = "Export"
         panel.beginSheetModal(for: window) { [weak self] response in
             guard response == .OK, let url = panel.url, let self else { return }

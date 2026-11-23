@@ -41,11 +41,11 @@ struct CustomToolEditorView: View {
                         .frame(minWidth: 144, idealWidth: 208, maxWidth: 300)
                 }
                 CustomToolDetailView(model: model, workspace: workspace)
-                    .id(model.definition.id)
+                    .id(model.workspaceID)
                     .frame(minWidth: 380, maxWidth: .infinity, maxHeight: .infinity)
                 if workspace.showsInspector {
                     CustomToolSampleInspector(model: model)
-                        .id(model.definition.id)
+                        .id(model.workspaceID)
                         .frame(minWidth: 218, idealWidth: 274, maxWidth: 440, maxHeight: .infinity)
                 }
             }

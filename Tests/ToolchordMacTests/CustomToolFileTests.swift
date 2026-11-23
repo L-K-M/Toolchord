@@ -40,12 +40,14 @@ import ToolchordCore
         editor.runSample()
         await editor.waitForIdle()
         #expect(editor.save())
-        #expect(try Data(contentsOf: root.appendingPathComponent("Library/custom.test.json")) == raw)
+        let installed = try PortableToolFile(reading: root.appendingPathComponent("Library/custom.test.js"))
+        #expect(String(decoding: installed.original, as: UTF8.self).hasPrefix("/* @toolchord"))
+        #expect(try installed.hasSameContent(as: PortableToolFile(data: raw)))
 
         let reopened = CustomToolEditorModel(library: library, editing: "custom.test")
         try reopened.exportTool(to: exported)
-        #expect(try Data(contentsOf: exported) == raw)
-        reopened.definition.title = "Edited"
+        #expect(try PortableToolFile(reading: exported).hasSameContent(as: installed))
+        reopened.scriptText = reopened.scriptText.replacingOccurrences(of: "Test Tool", with: "Edited")
         try reopened.exportTool(to: exported)
         let edited = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: exported)) as? [String: Any])
         #expect(edited["title"] as? String == "Edited")
@@ -53,7 +55,63 @@ import ToolchordCore
         #expect(try Data(contentsOf: url) == raw)
     }
 
-    @Test func editingReorderingAndRenamingControlsPreservesExtensionsOnlyOnRetainedIDs() throws {
+    @Test func newToolPastedAsJavaScriptKeepsItsExactHeaderBodyAndExtensions() async throws {
+        let (root, library) = try fixture()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let editor = CustomToolEditorModel(library: library)
+        let pasted = """
+        /* @toolchord
+        { "id" : "custom.suffix", "title" : "Suffix", "apiVersion" : 1,
+          "x-author" : "Ana", "options" : [{"id":"active","label":"Add suffix","defaultValue":"true"}] }
+        */
+        function preview(input, options) {
+            return input + (options.active === "true" ? "!" : "");
+        }
+
+        """
+        editor.scriptText = pasted
+        editor.sampleInput = "ready"
+        editor.runSample()
+        await editor.waitForIdle()
+        #expect(editor.trialResult?.output?.primaryText == "ready!")
+        let edited = pasted.replacingOccurrences(of: "Ana", with: "Léo")
+        editor.scriptText = edited
+        #expect(!editor.canSave)
+        editor.runSample()
+        await editor.waitForIdle()
+        try #require(editor.save())
+        let installed = root.appendingPathComponent("Library/custom.suffix.js")
+        #expect(try Data(contentsOf: installed) == Data(edited.utf8))
+
+        let reopened = CustomToolEditorModel(library: library, editing: "custom.suffix")
+        #expect(reopened.scriptText.hasSameUTF8(as: edited))
+        let exported = root.appendingPathComponent("Suffix.js")
+        try reopened.exportTool(to: exported)
+        #expect(try Data(contentsOf: exported) == Data(edited.utf8))
+    }
+
+    @Test func reopenedJavaScriptImportCanReplaceOnlyTheInstalledVersionItMatched() async throws {
+        let (root, library) = try fixture()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let original = ScriptToolDefinition(id: "custom.match", title: "Match", source: "function preview(input) { return input; }")
+        try library.save(original, replacing: nil)
+        let installed = try library.document(for: original.id)
+        let imported = root.appendingPathComponent("Match.js")
+        let reformatted = try installed.scriptText(for: original).replacingOccurrences(of: "/* @toolchord\n", with: "/* @toolchord\n\n")
+        try Data(reformatted.utf8).write(to: imported)
+        let editor = CustomToolEditorModel(library: library)
+        try editor.openTool(from: imported)
+        #expect(editor.scriptText.hasSameUTF8(as: reformatted) && editor.isDirty)
+        editor.flushRecovery()
+        let recovered = CustomToolEditorModel(library: library)
+        try #require(recovered.restoreRecoveryIfAvailable())
+        recovered.runSample()
+        await recovered.waitForIdle()
+        try #require(recovered.save())
+        #expect(try library.document(for: original.id).original == Data(reformatted.utf8))
+    }
+
+    @Test func generatedRevisionPreservesExtensionsOnlyOnRetainedControlIDs() async throws {
         let (root, library) = try fixture()
         defer { try? FileManager.default.removeItem(at: root) }
         let imported = root.appendingPathComponent("Controls.toolchord")
@@ -62,6 +120,7 @@ import ToolchordCore
         {
           "apiVersion": 1, "id": "custom.controls", "title": "Controls", "summary": "",
           "source": "function preview(input) { return input; }", "capabilities": ["clipboard.write"],
+          "palette": {"aliases": ["button tool"], "extra": "keep"},
           "actions": [
             {"id":"old","title":"Old","extra":"discard"},
             {"id":"copy","title":"Copy","extra":"keep"}
@@ -78,10 +137,10 @@ import ToolchordCore
         }
         """
         try Data(raw.utf8).write(to: imported)
-        let editor = CustomToolEditorModel(library: library)
-        try editor.openTool(from: imported)
-        editor.actionLines = "copy | Copy Value\nrenamed | Old"
-        editor.optionsJSON = """
+        var revised = try PortableToolFile(reading: imported).definition
+        revised.palette = nil  // Authoring providers return the runtime fields in their schema.
+        revised.actions = [.init(id: "copy", title: "Copy Value"), .init(id: "renamed", title: "Old")]
+        let newOptions = """
         [
           {"id":"flag","label":"Renamed Flag","defaultValue":"true"},
           {"id":"format","label":"Format","defaultValue":"b","choices":[
@@ -89,8 +148,18 @@ import ToolchordCore
           {"id":"new","label":"Remove","defaultValue":"true"}
         ]
         """
+        revised.options = try JSONDecoder().decode([ScriptOption].self, from: Data(newOptions.utf8))
+        let editor = CustomToolEditorModel(library: library, generator: Revision(value: revised))
+        try editor.openTool(from: imported)
+        editor.description = "Revise controls"
+        editor.generate()
+        await editor.waitForIdle()
+        try #require(!editor.isError, "\(editor.message ?? "Revision failed")")
         try editor.exportTool(to: exported)
         let result = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: exported)) as? [String: Any])
+        let palette = try #require(result["palette"] as? [String: Any])
+        #expect(palette["aliases"] as? [String] == ["button tool"])
+        #expect(palette["extra"] as? String == "keep")
         let actions = try #require(result["actions"] as? [[String: String]])
         #expect(actions == [["id": "copy", "title": "Copy Value", "extra": "keep"], ["id": "renamed", "title": "Old"]])
         let options = try #require(result["options"] as? [[String: Any]])
@@ -123,7 +192,7 @@ import ToolchordCore
         try recovered.exportTool(to: exported)
         #expect(try Data(contentsOf: exported) == original)
 
-        recovered.definition.title = "Edited"
+        recovered.scriptText = recovered.scriptText.replacingOccurrences(of: "Test Tool", with: "Edited")
         recovered.revert()
         #expect(recovered.definition.id == "custom.test")
         #expect(recovered.definition.title == "Test Tool")
@@ -160,19 +229,25 @@ import ToolchordCore
         await editor.waitForIdle()
         #expect(editor.trialResult?.output?.primaryText == "json.format sample")
         try #require(editor.save())
-        #expect(try library.document(for: bundled.id).original == raw)
+        #expect(try library.document(for: bundled.id).hasSameContent(as: PortableToolFile(data: raw)))
         let reopened = CustomToolEditorModel(library: library, editing: bundled.id)
         #expect(reopened.definition == customized)
         #expect(library.isModifiedBuiltIn(id: bundled.id))
 
         try PortableToolFile.encode(bundled).write(to: url)
         #expect(throws: (any Error).self) { try reopened.openTool(from: url) }
-        reopened.definition.summary = "Unsaved changes"
+        reopened.scriptText += "\n// Unsaved edit"
         reopened.restoreBuiltIn()
         #expect(reopened.definition == bundled && reopened.expected == bundled)
         #expect(!reopened.isDirty && !reopened.canSave && !reopened.isError)
         #expect(!library.isModifiedBuiltIn(id: bundled.id))
         #expect(try ScriptToolStore(directoryURL: root.appendingPathComponent("Library")).load().isEmpty)
+    }
+
+    private struct Revision: ScriptGenerating {
+        let value: ScriptToolDefinition
+        var unavailableReason: String? { nil }
+        func generate(description: String, current: ScriptToolDefinition, isNew: Bool) async throws -> ScriptToolDefinition { value }
     }
 
     @Test func matchingKnownFieldsDoNotMaskConflictingExtensionData() throws {

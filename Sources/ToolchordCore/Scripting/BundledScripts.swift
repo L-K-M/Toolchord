@@ -1,114 +1,50 @@
 import Foundation
 
 enum BundledScripts {
-    private struct Catalog: Decodable {
-        var apiVersion: Int
-        var libraries: [String: [String]]
-        var commands: [Entry]
+    private struct Entry {
+        let family: String
+        let text: String
+        let definition: ScriptToolDefinition
+        let command: ToolCommand
     }
 
-    struct Entry: Decodable, Sendable {
-        let id, title, summary, script, group, groupTitle, copyNoun: String
-        let aliases: [String]
-        let symbol, glyph, regenerateTitle: String?
-        let options: [ScriptOption]?
-        let suggestions: [Suggestion]?
-        let copyLabels: [String: [String: String]]?
-
-        struct Suggestion: Decodable, Sendable {
-            let when: [String]
-            let score: Int
-
-            func matches(_ profile: InputProfile) -> Bool {
-                when.allSatisfy { condition in
-                    let negative = condition.hasPrefix("!")
-                    let kind = negative ? String(condition.dropFirst()) : condition
-                    let matches = kind == "plain" ? profile.isPlainText : InputKind(rawValue: kind).map(profile.has) == true
-                    return negative ? !matches : matches
-                }
-            }
-        }
-
-        func definition(source: String) -> ScriptToolDefinition {
-            var definition = ScriptToolDefinition(id: id, title: title, summary: summary, source: source)
-            definition.options = options
-            definition.regenerateTitle = regenerateTitle
-            return definition
-        }
-
-        func command(source: String) throws -> ToolCommand {
-            let generator = regenerateTitle != nil
-            let seed: (@Sendable (SeedContext) -> String)?
-            if generator {
-                seed = { context in
-                    // Randomness is captured once per selection. The script maps
-                    // these bytes to a versioned identifier or private seed.
-                    (try? ScriptRuntime.seed(id: id, source: source, context: context)) ?? ""
-                }
-            } else { seed = nil }
-            return ToolCommand(id: id, title: title, summary: summary, group: ToolGroup(id: group, name: groupTitle),
-                               icon: glyph.map(CommandIcon.glyph) ?? .symbol(symbol ?? "curlybraces"), aliases: aliases,
-                               input: generator ? .none : .text, options: try (options ?? []).map { try $0.toolOption() },
-                               copyNoun: { options in
-                                   for (key, labels) in copyLabels ?? [:] {
-                                       if let value = options.values[key], let label = labels[value] { return label }
-                                   }
-                                   return copyNoun
-                               },
-                               affinity: { profile in suggestions?.first { $0.matches(profile) }?.score ?? 0 },
-                               makeSeed: seed, regenerateTitle: regenerateTitle) { request in
-                do {
-                    let data = try ScriptRuntime.evaluate(id: id, source: source, request: request)
-                    if request.cancellation.isCancelled { return .cancelled }
-                    return try ScriptRuntime.result(data, limits: request.limits)
-                } catch is CancellationError { return .cancelled }
-                catch { return .invalid(ToolDiagnostic(error.localizedDescription)) }
-            }
-        }
-    }
-
-    private static let entries: [(family: String, command: ToolCommand, definition: ScriptToolDefinition)] = {
+    private static let entries: [Entry] = {
         do {
-            guard let folder = Bundle.module.url(forResource: "Scripts", withExtension: nil) else {
+            guard let directory = Bundle.module.url(forResource: "Scripts", withExtension: nil) else {
                 throw ScriptFailure("The bundled tool resources are missing.")
             }
-            let manifest = try JSONDecoder().decode(Catalog.self, from: Data(contentsOf: folder.appendingPathComponent("catalog.json")))
-            guard manifest.apiVersion == 1 else { throw ScriptFailure("Unsupported bundled tool version.") }
-            var sources: [String: String] = [:]
-            for file in Set(manifest.commands.map(\.script)) {
-                let libraries = manifest.libraries[file] ?? []
-                let program = try sourceFile(file)
-                if libraries.isEmpty {
-                    sources[file] = program
-                } else {
-                    let helpers = try libraries.map { name in
-                        "// Shared library: \(name).js\n" + (try sourceFile(name))
-                    }
-                    let entry = "// Tool entry point: \(file).js\n" + program
-                    sources[file] = (["// The tool entry point is in \(file).js, after its shared libraries."] + helpers + [entry])
-                        .joined(separator: "\n\n")
+            let manager = FileManager.default
+            let families = try manager.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil,
+                                                          options: .skipsHiddenFiles)
+            let files = try families.filter(\.hasDirectoryPath).flatMap { family in
+                try manager.contentsOfDirectory(at: family, includingPropertiesForKeys: nil,
+                                                options: .skipsHiddenFiles).filter { $0.pathExtension == "js" }
+            }.sorted { $0.lastPathComponent < $1.lastPathComponent }
+            guard !files.isEmpty else { throw ScriptFailure("No bundled tools were found.") }
+            return try files.map { url in
+                let text = try String(contentsOf: url, encoding: .utf8)
+                let definition = try ToolScriptDocument(text: text).definition
+                let name = url.deletingPathExtension().lastPathComponent
+                let parts = name.split(separator: "-", maxSplits: 1)
+                guard parts.count == 2, Int(parts[0]) != nil, String(parts[1]).hasSameUTF8(as: definition.id) else {
+                    throw ScriptFailure("The tool ID must match its bundled filename: " + name)
                 }
-            }
-            return try manifest.commands.map { entry in
-                let source = sources[entry.script]!
-                return (entry.script, try entry.command(source: source), entry.definition(source: source))
+                return try Entry(family: url.deletingLastPathComponent().lastPathComponent, text: text,
+                                 definition: definition, command: definition.bundledCommand())
             }
         } catch {
-            // These resources are part of the signed build; CI exercises every
-            // entry. Custom documents are validated separately and recoverably.
+            // A broken signed resource is a build error. User files are validated separately.
             preconditionFailure("Invalid bundled tool catalog: " + error.localizedDescription)
         }
     }()
 
-    static func sourceFile(_ name: String) throws -> String {
-        guard let url = Bundle.module.url(forResource: name, withExtension: "js", subdirectory: "Scripts") else {
-            throw ScriptFailure("Missing bundled script: " + name)
-        }
-        return try String(contentsOf: url, encoding: .utf8)
-    }
-
     static var all: [ToolCommand] { entries.map(\.command) }
     static var definitions: [ScriptToolDefinition] { entries.map(\.definition) }
+
+    static func scriptText(id: String) -> String? {
+        entries.first { $0.definition.id == id }?.text
+    }
+
     static func commands(in family: String) -> [ToolCommand] {
         entries.filter { $0.family == family }.map(\.command)
     }

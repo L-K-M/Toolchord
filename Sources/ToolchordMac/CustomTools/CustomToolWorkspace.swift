@@ -31,9 +31,9 @@ final class CustomToolWorkspace {
     /// NSTextView owns its typing history. Keep the editor and its delegate alive while
     /// an inspector or segment is hidden, so Undo in the window still updates the draft.
     func editor(for label: String, model: CustomToolEditorModel, text: Binding<String>) -> AuthoringTextEditor.Coordinator {
-        if document != model.definition.id {
+        if document != model.workspaceID {
             editors.removeAll()
-            document = model.definition.id
+            document = model.workspaceID
         }
         if let existing = editors[label] {
             existing.text = text

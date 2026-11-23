@@ -14,6 +14,16 @@
             <key>LSItemContentTypes</key>
             <array><string>ch.lkmc.toolchord.tool</string></array>
         </dict>
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>Toolchord JavaScript Tool</string>
+            <key>CFBundleTypeRole</key>
+            <string>Editor</string>
+            <key>LSHandlerRank</key>
+            <string>Alternate</string>
+            <key>LSItemContentTypes</key>
+            <array><string>com.netscape.javascript-source</string></array>
+        </dict>
     </array>
     <key>UTExportedTypeDeclarations</key>
     <array>
