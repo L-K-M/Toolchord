@@ -35,7 +35,11 @@ let package = Package(
         .target(name: "ToolchordTheme"),
         .target(name: "ToolchordProviderIPC"),
         .target(name: "ToolchordProviderHost", dependencies: ["ToolchordProviderIPC"]),
-        .target(name: "ToolchordMac", dependencies: ["ToolchordCore", "ToolchordSession", "ToolchordTheme", "ToolchordProviderIPC"]),
+        .target(
+            name: "ToolchordMac",
+            dependencies: ["ToolchordCore", "ToolchordSession", "ToolchordTheme", "ToolchordProviderIPC"],
+            resources: [.copy("Resources/Wrench.svg")]
+        ),
         .executableTarget(name: "ToolchordSnapshots", dependencies: ["ToolchordMac"]),
         .testTarget(name: "ToolchordCoreTests", dependencies: ["ToolchordCore"]),
         .testTarget(name: "ToolchordSessionTests", dependencies: ["ToolchordSession"]),
