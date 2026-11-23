@@ -1,6 +1,6 @@
 # JavaScript tools
 
-Search for **Make Custom Tool** in the palette. Describe the tool, choose its generation provider, and run the draft on sample input. Inspect the preview and any action outputs before saving. The saved title becomes searchable immediately. Select the same tool in the editor to revise it. You can also edit its JavaScript directly.
+Search for **Make Custom Tool** in the palette. Describe the tool, choose its generation provider, and run the draft on sample input. Inspect the preview and any action outputs before saving. The saved title becomes searchable immediately. Select an existing tool and choose **Update** to describe the changes you want. You can also edit its JavaScript directly.
 
 | Provider | Setup and model choice |
 | --- | --- |

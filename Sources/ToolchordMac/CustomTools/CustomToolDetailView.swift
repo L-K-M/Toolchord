@@ -2,7 +2,7 @@ import SwiftUI
 import ToolchordCore
 
 struct CustomToolDetailView: View {
-    private enum Page: String, CaseIterable { case describe = "Describe", script = "Script", options = "Options" }
+    private enum Page { case describe, script, options }
 
     @Bindable var model: CustomToolEditorModel
     let workspace: CustomToolWorkspace
@@ -18,7 +18,9 @@ struct CustomToolDetailView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Picker("Editor section", selection: $page) {
-                ForEach(Page.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                Text(model.isRevisingTool ? "Update" : "Describe").tag(Page.describe)
+                Text("Script").tag(Page.script)
+                Text("Options").tag(Page.options)
             }
             .pickerStyle(.segmented)
             .labelsHidden()
@@ -54,12 +56,13 @@ struct CustomToolDetailView: View {
     private var descriptionPage: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
-                Text("Describe your tool").font(.headline)
-                AuthoringTextEditor(text: $model.description, label: "Describe the custom tool", monospaced: false)
+                Text(model.isRevisingTool ? "Update your tool" : "Describe your tool").font(.headline)
+                AuthoringTextEditor(text: $model.description, label: "Tool instructions", monospaced: false)
                     .frame(height: 140)
                     .overlay(alignment: .topLeading) {
                         if model.description.isEmpty {
-                            Text("For example, sort lines by length and remove duplicates.")
+                            Text(model.isRevisingTool ? "What would you like to change?"
+                                 : "For example, sort lines by length and remove duplicates.")
                                 .foregroundStyle(.tertiary)
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 7)
@@ -121,13 +124,16 @@ struct CustomToolDetailView: View {
                 Text("Only a custom button can write to the clipboard. Samples leave your clipboard unchanged.")
                 Divider().padding(.vertical, 3)
                 Text("Tool options").font(.headline)
-                Text("Enter an array of options in JSON. Each option has an id, label and defaultValue. For a choice list, add choices with an id and label.")
+                Text("Toolchord uses this JSON to build controls in the palette and sample inspector. Your script reads the selected values from `options`. Leave `[]` for a tool with no options.")
                 AuthoringTextEditor(text: $model.optionsJSON, label: "Custom tool options JSON", monospaced: true)
                     .frame(height: 100)
                 DisclosureGroup("Example option") {
-                    Text(#"[{"id":"uppercase","label":"Uppercase","defaultValue":"false"}]"#)
-                        .font(.system(.caption, design: .monospaced))
-                        .textSelection(.enabled)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(#"[{"id":"uppercase","label":"Uppercase","defaultValue":"false"}]"#)
+                            .font(.system(.caption, design: .monospaced))
+                        Text("Read this toggle as `options.uppercase === \"true\"`. For a choice list, add `choices` with an `id` and `label` for each choice.")
+                    }
+                    .textSelection(.enabled)
                 }
                 Divider().padding(.vertical, 3)
                 Text("Generator").font(.headline)

@@ -129,12 +129,16 @@ import ToolchordCore
         let generated = ScriptToolDefinition(id: "custom.ignored", title: "Identity", source: "function preview(input) { return input; }")
         let editor = CustomToolEditorModel(library: library, generator: FixedGenerator(definition: generated))
         let original = editor.definition
+        #expect(!editor.isRevisingTool)
         editor.description = "Generate an identity tool"
+        #expect(!editor.isRevisingTool)
         editor.generate()
         await editor.waitForIdle()
         let undo = editor.undoManager
         #expect(undo.undoActionName == "Generate Tool")
+        #expect(editor.isRevisingTool)
         undo.undo()
+        #expect(!editor.isRevisingTool)
         #expect(editor.definition == original)
         #expect(editor.description == "Generate an identity tool")
         undo.redo()
@@ -246,6 +250,12 @@ import ToolchordCore
         #expect(editor.trialResult?.output?.primaryText == preview)
     }
 
+    @Test func builtInOpensForRevision() {
+        let library = CustomToolLibrary(store: ScriptToolStore(directoryURL: directory()))
+        let editor = CustomToolEditorModel(library: library, editing: "color.rgb")
+        #expect(editor.isRevisingTool)
+    }
+
     @Test func typedDescriptionIsProtectedUntilSuccessfulGeneration() async throws {
         let folder = directory()
         defer { try? FileManager.default.removeItem(at: folder) }
@@ -255,6 +265,7 @@ import ToolchordCore
         let library = CustomToolLibrary(store: store)
         library.reload()
         let editor = CustomToolEditorModel(library: library, generator: FixedGenerator(definition: original), editing: original.id)
+        #expect(editor.isRevisingTool)
         editor.description = "Keep the same behavior"
         #expect(editor.isDirty)
         editor.selectDocument("new")

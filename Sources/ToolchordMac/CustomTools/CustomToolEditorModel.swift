@@ -63,6 +63,7 @@ final class CustomToolEditorModel {
     }
 
     var isBusy: Bool { isGenerating || isRunningTrial }
+    var isRevisingTool: Bool { expected != nil || hasDefinitionChanges }
     var documentID: String { expected?.id ?? "new" }
     var hasPendingDescription: Bool { !description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     var isDirty: Bool { hasPendingDescription || hasDefinitionChanges }
@@ -220,7 +221,7 @@ final class CustomToolEditorModel {
         let prompt = description.trimmingCharacters(in: .whitespacesAndNewlines)
         let submittedDescription = description
         guard !prompt.isEmpty, prompt.utf8.count <= 4096 else {
-            report("Describe your tool in 1 to 4,096 bytes of text.", error: true)
+            report("Enter a request between 1 and 4,096 bytes.", error: true)
             return
         }
         let current: ScriptToolDefinition
@@ -232,7 +233,7 @@ final class CustomToolEditorModel {
         let selection = providers.selection
         let generator = selection.provider == .apple ? appleGenerator
             : externalGenerator(selection.provider.rawValue, selection.endpoint, selection.model)
-        let isNew = expected == nil && !hasDefinitionChanges
+        let isNew = !isRevisingTool
         workTask = Task { [weak self] in
             do {
                 var generated = try await generator.generate(description: prompt, current: current, isNew: isNew)
@@ -254,7 +255,7 @@ final class CustomToolEditorModel {
                 self.sampleOptions = [:]
                 if self.description.hasSameUTF8(as: submittedDescription) { self.description = "" }
                 self.isGenerating = false
-                self.registerUndo(before, name: "Generate Tool")
+                self.registerUndo(before, name: isNew ? "Generate Tool" : "Generate Update")
                 self.report("Draft generated. Run it on your sample before saving.")
             } catch {
                 guard !Task.isCancelled, let self, self.workID == id else { return }
