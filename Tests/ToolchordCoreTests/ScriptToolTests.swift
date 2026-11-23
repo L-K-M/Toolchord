@@ -51,8 +51,10 @@ import Testing
 
     @Test func invalidDocumentsCannotRegister() throws {
         var broken = definition
-        broken.id = "json.format"
-        #expect(throws: (any Error).self) { try broken.command() }
+        for id in ["json.unknown", "toolchord.makeCustom", "custom../json.format", "../json.format"] {
+            broken.id = id
+            #expect(throws: (any Error).self) { try broken.command() }
+        }
         broken = definition
         broken.source = "function preview("
         #expect(throws: (any Error).self) { try broken.command() }

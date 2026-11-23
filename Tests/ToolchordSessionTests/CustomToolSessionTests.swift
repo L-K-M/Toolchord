@@ -95,6 +95,34 @@ import ToolchordCore
         #expect(!session.canCopy)
     }
 
+    @Test func replacingGeneratorReseedsOnlyChangedImplementations() async throws {
+        func generator(_ value: String) -> ToolCommand {
+            ToolCommand(id: "uuid.v4", title: "Generator", summary: "", group: .init(id: "uuid", name: "UUID"),
+                        icon: .glyph("G"), input: .none, copyNoun: "value", makeSeed: { _ in value }) {
+                .success(ToolOutput(primaryText: $0.seed ?? "", status: "Ready"))
+            }
+        }
+        let original = generator("original")
+        let session = PaletteSession(catalog: [original], evaluator: InlineEvaluator(), clipboard: MemoryClipboard(), preferences: MemoryPreferences())
+        session.activate()
+        await session.waitForIdle()
+        #expect(session.copyableOutput?.primaryText == "original")
+        session.replaceCatalog([generator("edited")])
+        await session.waitForIdle()
+        #expect(session.copyableOutput?.primaryText == "edited")
+        session.replaceCatalog([original])
+        await session.waitForIdle()
+        #expect(session.copyableOutput?.primaryText == "original")
+
+        let uuid = try #require(ToolCatalog.command(id: "uuid.v4"))
+        session.replaceCatalog([uuid])
+        await session.waitForIdle()
+        let stable = try #require(session.copyableOutput?.primaryText)
+        session.replaceCatalog([uuid, try script()])
+        await session.waitForIdle()
+        #expect(session.copyableOutput?.primaryText == stable)
+    }
+
     private func waitForAction(_ session: PaletteSession) async throws {
         let deadline = ContinuousClock.now + .seconds(2)
         while !session.isPerformingScriptAction, ContinuousClock.now < deadline { await Task.yield() }

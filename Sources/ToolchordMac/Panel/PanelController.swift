@@ -400,8 +400,8 @@ public final class PanelController: NSObject, PaletteActions, PaletteCommandHand
             }
         }
 
-        if let id = command?.id, id.hasPrefix("custom.") {
-            menu.addItem(item("Edit Custom Tool…", key: "", modifiers: [], enabled: true) { [weak self] in
+        if let id = command?.id, ScriptToolDefinition.isValidToolID(id) {
+            menu.addItem(item("Edit Tool…", key: "", modifiers: [], enabled: true) { [weak self] in
                 self?.editCustomTool(id)
             })
         }

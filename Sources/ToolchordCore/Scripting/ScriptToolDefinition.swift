@@ -42,8 +42,8 @@ public struct ScriptToolDefinition: Codable, Sendable, Hashable, Identifiable {
 
     public func validate() throws {
         guard apiVersion == 1 else { throw ScriptFailure("This tool needs an unsupported API version.") }
-        guard id.hasPrefix("custom."), Self.isIdentifier(String(id.dropFirst(7))) else {
-            throw ScriptFailure("Choose a valid custom tool identifier.")
+        guard Self.isValidToolID(id) else {
+            throw ScriptFailure("Use a built-in tool identifier or a valid custom. identifier.")
         }
         guard !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, title.count <= 100,
               summary.count <= 500 else { throw ScriptFailure("Give the tool a short title and description.") }
@@ -83,6 +83,12 @@ public struct ScriptToolDefinition: Codable, Sendable, Hashable, Identifiable {
         }
     }
 
+    /// Only exact shipped tool IDs and single, path-safe custom names may identify a document.
+    public static func isValidToolID(_ id: String) -> Bool {
+        if id.hasPrefix("custom.") { return isIdentifier(String(id.dropFirst(7))) }
+        return ToolCatalog.command(id: id)?.id.hasSameUTF8(as: id) == true
+    }
+
     private static func isIdentifier(_ id: String) -> Bool {
         !id.isEmpty && id.utf8.count <= 80 && id.utf8.allSatisfy {
             (65...90).contains($0) || (97...122).contains($0) || (48...57).contains($0) || $0 == 45 || $0 == 95
@@ -95,9 +101,16 @@ public struct ScriptToolDefinition: Codable, Sendable, Hashable, Identifiable {
         if regenerateTitle != nil {
             makeSeed = { ScriptWorker.captureSeed($0) }
         } else { makeSeed = nil }
-        var command = ToolCommand(id: id, title: title, summary: summary, group: .init(id: "custom", name: "Custom"),
-                                  icon: .symbol("curlybraces"), input: regenerateTitle == nil ? .text : .none,
-                                  options: try (options ?? []).map { try $0.toolOption() }, copyNoun: "result",
+        // Built-in identity preserves palette presentation and ranking. Code from
+        // any editable document, including a built-in override, runs in the worker.
+        let bundled = ToolCatalog.command(id: id)
+        var command = ToolCommand(id: id, title: title, summary: summary,
+                                  group: bundled?.group ?? .init(id: "custom", name: "Custom"),
+                                  icon: bundled?.icon ?? .symbol("curlybraces"), aliases: bundled?.aliases ?? [],
+                                  input: regenerateTitle == nil ? .text : .none,
+                                  options: try (options ?? []).map { try $0.toolOption() },
+                                  copyNoun: bundled?.copyNoun ?? { _ in "result" },
+                                  affinity: bundled?.affinity ?? { _ in 0 },
                                   makeSeed: makeSeed, regenerateTitle: regenerateTitle) { request in
             ScriptWorker.run(id: id, source: source, request: request, requiresActionHandler: !actions.isEmpty)
         }

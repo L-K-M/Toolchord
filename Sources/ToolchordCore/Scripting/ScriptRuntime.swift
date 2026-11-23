@@ -72,7 +72,11 @@ enum ScriptRuntime {
         return Data(string.utf8)
     }
 
-    static func seed(id: String, source: String, context: SeedContext, entropy: [UInt8]) throws -> String {
+    static func randomEntropy() -> [UInt8] {
+        (0..<512).map { _ in UInt8.random(in: .min ... .max) }
+    }
+
+    static func seed(id: String, source: String, context: SeedContext, entropy: [UInt8] = randomEntropy()) throws -> String {
         guard let js = JSContext() else { throw ScriptFailure("Could not start JavaScript.") }
         js.evaluateScript(source)
         try check(js)

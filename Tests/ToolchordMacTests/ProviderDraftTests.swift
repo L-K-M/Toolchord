@@ -4,6 +4,12 @@ import ToolchordCore
 @testable import ToolchordMac
 
 @MainActor @Suite struct ProviderDraftTests {
+    @Test func sharedScriptRevisionNamesTheEditedCommand() throws {
+        let tool = try #require(ToolCatalog.bundledDefinitions.first { $0.id == "json.format" })
+        let prompt = try AuthoringPrompt.request(description: "Use tabs", current: tool, isNew: false)
+        #expect(prompt.contains("api.id is json.format"))
+    }
+
     @Test func generatedProgramCanBeTriedAndRevisedWithoutChangingIdentity() throws {
         let id = "custom.external"
         let reply = #"""

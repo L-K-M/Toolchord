@@ -91,6 +91,9 @@ public struct SeedContext: Sendable {
 /// deterministic for a given ``ToolRequest`` and must not touch the
 /// clipboard, the network, the file system, or logs.
 public struct ToolCommand: Sendable, Identifiable {
+    /// A signed generator and its local replacement can use different seed formats.
+    /// Copies of the same implementation can keep their session seed across reloads.
+    package let implementationID = UUID()
     /// Stable identifier, `group.action`, such as `json.format`.
     public let id: String
     /// Verb-first title shown in the list, such as "Format JSON".

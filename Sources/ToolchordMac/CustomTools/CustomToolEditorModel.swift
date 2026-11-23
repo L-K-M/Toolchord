@@ -108,6 +108,26 @@ final class CustomToolEditorModel {
         flushRecovery()
     }
 
+    /// The editor confirms discarding both the installed override and the current draft.
+    func restoreBuiltIn() {
+        guard !isBusy, let expected, library.isModifiedBuiltIn(id: expected.id),
+              let bundled = CustomToolCatalog.bundledByID[expected.id] else { return }
+        guard let originalFile else {
+            report("Reopen the saved tool to load its current version before restoring.", error: true)
+            return
+        }
+        do {
+            try library.restoreBuiltIn(replacing: expected, original: originalFile)
+            saveRevision += 1
+            load(bundled)
+            undoManager.removeAllActions()
+            flushRecovery()
+            report("Restored the built-in version in the library and palette.")
+        } catch {
+            report(Self.message(for: error), error: true)
+        }
+    }
+
     func discardDraft() {
         cancelWork()
         load(expected)
@@ -126,14 +146,21 @@ final class CustomToolEditorModel {
             throw ScriptToolStore.Error.document(url.lastPathComponent, library.loadProblem ?? "Couldn’t read the tool library.")
         }
         let existing = library.definitions.first { $0.id == file.definition.id }
-        if let existing, try !file.hasSameContent(as: library.document(for: existing.id)) {
-            throw ScriptToolStore.Error.document(url.lastPathComponent,
-                "A different tool with this identifier is installed. Edit the installed tool or give the file a unique custom. identifier.")
+        let matchesInstalled: Bool
+        if let existing {
+            matchesInstalled = try file.hasSameContent(as: library.document(for: existing.id))
+            // A portable customization can be tried against the shipped tool. An
+            // already customized or user-created tool keeps its collision protection.
+            if !matchesInstalled && (ToolCatalog.command(id: existing.id) == nil || library.isModifiedBuiltIn(id: existing.id)) {
+                throw ScriptToolStore.Error.document(url.lastPathComponent,
+                    "A different tool with this identifier is installed. Edit the installed tool or give the file a unique custom. identifier.")
+            }
+        } else {
+            matchesInstalled = false
         }
         load(existing, content: file.definition, source: file)
-        // A new imported definition has not been installed, even before the
-        // user makes a change to the visible fields.
-        baseline = try existing.map(Self.fingerprint)
+        // Also mark imports differing only in extension fields as unsaved.
+        if !matchesInstalled { baseline = nil }
         undoManager.removeAllActions()
         flushRecovery()
     }

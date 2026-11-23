@@ -7,7 +7,10 @@ enum AuthoringPrompt {
         if isNew {
             context = "Create a new tool. Start with empty options and actions unless requested."
         } else {
-            // Present editable code verbatim and omit the opaque document ID.
+            // Shared bundled programs dispatch on api.id. A user-created tool's
+            // private document identifier is unnecessary for a revision.
+            let commandContext = ToolCatalog.command(id: current.id) == nil ? ""
+                : "For this built-in command, api.id is \(current.id). Revise the behavior for that ID.\n"
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.sortedKeys]
             let controls = String(decoding: try encoder.encode(current.options ?? []), as: UTF8.self)
@@ -21,7 +24,7 @@ enum AuthoringPrompt {
             Options: \(controls)
             Actions: \(actions)
             Regenerate button: \(current.regenerateTitle ?? "none")
-            Existing JavaScript:
+            \(commandContext)Existing JavaScript:
             \(current.source)
             """
         }

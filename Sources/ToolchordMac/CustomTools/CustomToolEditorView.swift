@@ -6,6 +6,7 @@ struct CustomToolEditorView: View {
     let workspace: CustomToolWorkspace
     let onSelect: (String) -> Void
     let onOpenFile: (URL) -> Void
+    @State private var libraryFilter = ""
 
     init(model: CustomToolEditorModel, workspace: CustomToolWorkspace = CustomToolWorkspace(),
          onSelect: ((String) -> Void)? = nil, onOpenFile: @escaping (URL) -> Void = { _ in }) {
@@ -36,8 +37,8 @@ struct CustomToolEditorView: View {
             }
             HSplitView {
                 if workspace.showsSidebar {
-                    library
-                        .frame(minWidth: 144, idealWidth: 178, maxWidth: 220)
+                    ToolLibrarySidebar(model: model, filter: $libraryFilter, onSelect: onSelect)
+                        .frame(minWidth: 144, idealWidth: 208, maxWidth: 300)
                 }
                 CustomToolDetailView(model: model, workspace: workspace)
                     .id(model.definition.id)
@@ -62,39 +63,6 @@ struct CustomToolEditorView: View {
             }
             return true
         }
-    }
-
-    private var library: some View {
-        List(selection: Binding<String?>(
-            get: { model.documentID },
-            set: { if let id = $0, id != model.documentID { onSelect(id) } }
-        )) {
-            Section("Library") {
-                Label(model.documentID == "new" && model.isDirty ? draftTitle : "New Tool", systemImage: "square.and.pencil")
-                    .lineLimit(1)
-                    .tag("new")
-            }
-            Section("Saved Tools") {
-                if model.library.definitions.isEmpty {
-                    Text("Saved tools appear here.")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .selectionDisabled()
-                }
-                ForEach(model.library.definitions, id: \.id) { tool in
-                    Label(tool.id == model.documentID ? draftTitle : tool.title, systemImage: "wrench")
-                        .lineLimit(1)
-                        .tag(tool.id)
-                        .help(tool.summary.isEmpty ? tool.title : tool.summary)
-                }
-            }
-        }
-        .listStyle(.sidebar)
-        .accessibilityLabel("Tool library")
-    }
-
-    private var draftTitle: String {
-        model.definition.title.isEmpty ? "Untitled Tool" : model.definition.title
     }
 
     private var status: some View {
