@@ -18,7 +18,7 @@ A saved JSON document has these fields:
 | Field | Meaning |
 | --- | --- |
 | `apiVersion` | The integer `1`. |
-| `id`, `title`, `summary` | The editor assigns a stable `custom.` identifier. Title and summary appear in the palette. |
+| `id`, `title`, `summary` | New tools get a stable `custom.` identifier. A customized built-in keeps its catalog ID. Title and summary appear in the palette. |
 | `source` | Synchronous JavaScript containing a global `function preview(input, options, api)`. |
 | `options` | Optional settings. A toggle has `id`, `label`, and a string `defaultValue` of `"true"` or `"false"`. A choice also has `choices: [{id, label}, …]`. The default must be one of its IDs. |
 | `regenerateTitle` | Optional button label for a generator. A generator gets `null` input and a stable `api.seed`. |
@@ -93,5 +93,11 @@ A Markdown tree has a `nodes` array in breadth-first order. Read the root at ind
 ## Bundled tools and verification
 
 The catalog in `Sources/ToolchordCore/Scripts/catalog.json` stores command IDs, display order, search terms, suggestion rules and option definitions. Its script names select JavaScript resources in the same directory. For a family with shared JavaScript libraries, list their basenames in the manifest’s `libraries` object in load order. The runtime runs the bundled preview or generator function with the same argument and result conventions as a local tool. The app runs its signed bundled code directly and isolates editable code in a separate process.
+
+### Working with bundled tools in the editor
+
+Open **Make Custom Tool** and select a command under **Built-In Tools**, or choose **Edit Tool…** from the palette’s Actions menu. **Script** shows the JavaScript the command runs, including its shared helpers. Related commands may share a source file and select their behavior using `api.id`.
+
+Edit the script or options, run a sample with **⌘↵**, then save with **⌘S**. The library stores the customization on this Mac under the command’s original ID. Only the selected command changes. Samples and saved customizations run in the same bounded worker as other authored tools. **Revert Changes** discards unsaved edits. **Restore Built-In Version** removes the saved customization and returns the palette to the version bundled with the current app.
 
 Run `make test` for tool fixtures, session behavior, the worker and editor/store tests. To exercise prompt generation with a real installed Apple Intelligence model, run `TOOLCHORD_TEST_LOCAL_MODEL=1 swift test --filter LiveAuthoringTests` on a compatible Mac. That check generates a tool, tries it on a sample, saves it, asks the model to revise it, and runs the reloaded definition.

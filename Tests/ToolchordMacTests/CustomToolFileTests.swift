@@ -34,7 +34,7 @@ import ToolchordCore
         try editor.openTool(from: url)
         #expect(editor.isDirty && !editor.canSave)
         #expect(editor.trialResult == nil)
-        #expect(library.definitions.isEmpty)
+        #expect(!library.definitions.contains { $0.id.hasPrefix("custom.") })
         try editor.exportTool(to: exported)
         #expect(try Data(contentsOf: exported) == raw)
         editor.runSample()
@@ -133,6 +133,46 @@ import ToolchordCore
         #expect(recovered.definition.id == "custom.test")
         #expect(recovered.isDirty && recovered.expected == nil)
         recovered.discardDraft()
+    }
+
+    @Test func importingBuiltInCustomizationStagesRunsAndRestoresTheSameCommand() async throws {
+        let (root, library) = try fixture()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let editor = CustomToolEditorModel(library: library, editing: "json.format")
+        let bundled = editor.definition
+        try #require(bundled.id == "json.format")
+        #expect(bundled.source.contains("function preview("))
+
+        var customized = bundled
+        customized.source = "function preview(input, options, api) { return api.id + ' ' + input; }"
+        var json = try #require(try JSONSerialization.jsonObject(with: PortableToolFile.encode(customized)) as? [String: Any])
+        json["extension-note"] = "preserve when installed"
+        let raw = try JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted])
+        let url = root.appendingPathComponent("Customized.toolchord")
+        try raw.write(to: url)
+        try editor.openTool(from: url)
+        #expect(editor.isDirty && !editor.canSave)
+        #expect(!library.isModifiedBuiltIn(id: bundled.id))
+        #expect(editor.expected == bundled)
+
+        editor.sampleInput = "sample"
+        editor.runSample()
+        await editor.waitForIdle()
+        #expect(editor.trialResult?.output?.primaryText == "json.format sample")
+        try #require(editor.save())
+        #expect(try library.document(for: bundled.id).original == raw)
+        let reopened = CustomToolEditorModel(library: library, editing: bundled.id)
+        #expect(reopened.definition == customized)
+        #expect(library.isModifiedBuiltIn(id: bundled.id))
+
+        try PortableToolFile.encode(bundled).write(to: url)
+        #expect(throws: (any Error).self) { try reopened.openTool(from: url) }
+        reopened.definition.summary = "Unsaved changes"
+        reopened.restoreBuiltIn()
+        #expect(reopened.definition == bundled && reopened.expected == bundled)
+        #expect(!reopened.isDirty && !reopened.canSave && !reopened.isError)
+        #expect(!library.isModifiedBuiltIn(id: bundled.id))
+        #expect(try ScriptToolStore(directoryURL: root.appendingPathComponent("Library")).load().isEmpty)
     }
 
     @Test func matchingKnownFieldsDoNotMaskConflictingExtensionData() throws {

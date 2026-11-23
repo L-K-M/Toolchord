@@ -18,7 +18,7 @@ import ToolchordCore
         let editor = CustomToolEditorModel(library: library, generator: UnavailableGenerator())
         editor.sampleInput = " hello "
         editor.save()
-        #expect(library.definitions.isEmpty)
+        #expect(!library.definitions.contains { $0.id.hasPrefix("custom.") })
         editor.runSample()
         await editor.waitForIdle()
         #expect(editor.trialResult?.output?.primaryText == "hello")

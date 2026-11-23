@@ -29,6 +29,13 @@ enum BundledScripts {
             }
         }
 
+        func definition(source: String) -> ScriptToolDefinition {
+            var definition = ScriptToolDefinition(id: id, title: title, summary: summary, source: source)
+            definition.options = options
+            definition.regenerateTitle = regenerateTitle
+            return definition
+        }
+
         func command(source: String) throws -> ToolCommand {
             let generator = regenerateTitle != nil
             let seed: (@Sendable (SeedContext) -> String)?
@@ -36,8 +43,7 @@ enum BundledScripts {
                 seed = { context in
                     // Randomness is captured once per selection. The script maps
                     // these bytes to a versioned identifier or private seed.
-                    let entropy = (0..<512).map { _ in UInt8.random(in: .min ... .max) }
-                    return (try? ScriptRuntime.seed(id: id, source: source, context: context, entropy: entropy)) ?? ""
+                    (try? ScriptRuntime.seed(id: id, source: source, context: context)) ?? ""
                 }
             } else { seed = nil }
             return ToolCommand(id: id, title: title, summary: summary, group: ToolGroup(id: group, name: groupTitle),
@@ -61,7 +67,7 @@ enum BundledScripts {
         }
     }
 
-    private static let entries: [(family: String, command: ToolCommand)] = {
+    private static let entries: [(family: String, command: ToolCommand, definition: ScriptToolDefinition)] = {
         do {
             guard let folder = Bundle.module.url(forResource: "Scripts", withExtension: nil) else {
                 throw ScriptFailure("The bundled tool resources are missing.")
@@ -71,11 +77,22 @@ enum BundledScripts {
             var sources: [String: String] = [:]
             for file in Set(manifest.commands.map(\.script)) {
                 let libraries = manifest.libraries[file] ?? []
-                sources[file] = try (libraries + [file]).map {
-                    try sourceFile($0)
-                }.joined(separator: "\n")
+                let program = try sourceFile(file)
+                if libraries.isEmpty {
+                    sources[file] = program
+                } else {
+                    let helpers = try libraries.map { name in
+                        "// Shared library: \(name).js\n" + (try sourceFile(name))
+                    }
+                    let entry = "// Tool entry point: \(file).js\n" + program
+                    sources[file] = (["// The tool entry point is in \(file).js, after its shared libraries."] + helpers + [entry])
+                        .joined(separator: "\n\n")
+                }
             }
-            return try manifest.commands.map { ($0.script, try $0.command(source: sources[$0.script]!)) }
+            return try manifest.commands.map { entry in
+                let source = sources[entry.script]!
+                return (entry.script, try entry.command(source: source), entry.definition(source: source))
+            }
         } catch {
             // These resources are part of the signed build; CI exercises every
             // entry. Custom documents are validated separately and recoverably.
@@ -91,6 +108,7 @@ enum BundledScripts {
     }
 
     static var all: [ToolCommand] { entries.map(\.command) }
+    static var definitions: [ScriptToolDefinition] { entries.map(\.definition) }
     static func commands(in family: String) -> [ToolCommand] {
         entries.filter { $0.family == family }.map(\.command)
     }

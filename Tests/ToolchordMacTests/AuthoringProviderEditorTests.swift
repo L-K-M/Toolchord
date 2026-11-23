@@ -60,7 +60,7 @@ private struct StubGenerator: ScriptGenerating {
         #expect(editor.isError)
         #expect(editor.definition == saved)
         #expect(editor.description == "Keep commas")
-        #expect(library.definitions == [saved])
+        #expect(library.definitions.filter { $0.id.hasPrefix("custom.") } == [saved])
     }
 
     @Test func switchingHarnessDuringGenerationKeepsCurrentDraft() async throws {

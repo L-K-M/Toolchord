@@ -72,11 +72,11 @@ import ToolchordCore
         #expect(report.problems.first?.contains("filename") == true)
     }
 
-    @Test func unsafeAndBuiltInIDsAndInvalidSourceAreRejected() throws {
+    @Test func unsafeAndUnknownIDsAndInvalidSourceAreRejected() throws {
         let directory = temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = ScriptToolStore(directoryURL: directory)
-        for id in ["", "json.format", "custom../escape", "custom.a/b", "custom.a.b"] {
+        for id in ["", "json.unknown", "toolchord.makeCustom", "custom../escape", "custom.a/b", "custom.a.b"] {
             #expect(throws: ScriptToolStore.Error.invalidID(id)) { try store.save(definition(id: id), replacing: nil) }
         }
         var invalid = definition()
@@ -105,7 +105,7 @@ import ToolchordCore
         var catalog: [ToolCommand] = []
         library.onChange = { catalog = $0 }
         #expect(library.reload())
-        #expect(library.definitions == [valid])
+        #expect(library.definitions.filter { $0.id.hasPrefix("custom.") } == [valid])
         #expect(catalog.contains { $0.id == valid.id })
         #expect(library.loadProblem?.contains("custom.damaged.json") == true)
         var updated = valid

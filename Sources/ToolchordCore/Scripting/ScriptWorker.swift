@@ -49,9 +49,8 @@ public enum ScriptWorker {
 
     /// Capture randomness and the clock on selection. User-supplied makeSeed
     /// runs in the worker so it cannot block the main actor.
-    static func captureSeed(_ context: SeedContext) -> String {
-        let seed = CapturedSeed(entropy: Data((0..<512).map { _ in UInt8.random(in: .min ... .max) }),
-                                now: context.now, options: context.options.values)
+    static func captureSeed(_ context: SeedContext, entropy: [UInt8] = ScriptRuntime.randomEntropy()) -> String {
+        let seed = CapturedSeed(entropy: Data(entropy), now: context.now, options: context.options.values)
         guard let data = try? JSONEncoder().encode(seed) else { return "" }
         return String(decoding: data, as: UTF8.self)
     }

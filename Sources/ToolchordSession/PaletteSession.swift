@@ -206,9 +206,13 @@ public final class PaletteSession {
         let previous = selectedID
         var seen = Set<String>()
         catalog = commands.filter { seen.insert($0.id).inserted }
+        let previousCommands = commandsByID
         commandsByID = Dictionary(uniqueKeysWithValues: catalog.map { ($0.id, $0) })
         chosenOptions = chosenOptions.filter { commandsByID[$0.key] != nil }
-        seeds = seeds.filter { commandsByID[$0.key] != nil }
+        seeds = seeds.filter { id, _ in
+            guard let command = commandsByID[id] else { return false }
+            return command.implementationID == previousCommands[id]?.implementationID
+        }
         lastReady = nil
         if case .tool(let id) = mode, commandsByID[id] == nil { mode = .search }
         listing = CommandListing.make(query: query, profile: profile, catalog: catalog, recentIDs: preferences.recentCommandIDs)

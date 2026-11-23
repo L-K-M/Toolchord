@@ -1,4 +1,5 @@
 import SwiftUI
+import ToolchordCore
 
 struct CustomToolDetailView: View {
     private enum Page: String, CaseIterable { case describe = "Describe", script = "Script", options = "Options" }
@@ -6,6 +7,7 @@ struct CustomToolDetailView: View {
     @Bindable var model: CustomToolEditorModel
     let workspace: CustomToolWorkspace
     @State private var page: Page
+    @State private var confirmingRestore = false
 
     init(model: CustomToolEditorModel, workspace: CustomToolWorkspace) {
         self.workspace = workspace
@@ -26,6 +28,23 @@ struct CustomToolDetailView: View {
             case .describe: descriptionPage
             case .script: scriptPage
             case .options: optionsPage
+            }
+
+            if model.library.isModifiedBuiltIn(id: model.documentID) {
+                HStack {
+                    Text("Customized built-in tool")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Restore Built-In Version…") { confirmingRestore = true }
+                        .disabled(model.isBusy)
+                }
+                .alert("Restore the built-in version?", isPresented: $confirmingRestore) {
+                    Button("Cancel", role: .cancel) {}
+                    Button("Restore", role: .destructive) { model.restoreBuiltIn() }
+                } message: {
+                    Text("Your saved edits to “\(model.expected?.title ?? model.definition.title)” and any unsaved changes to this tool will be discarded.")
+                }
             }
         }
         .padding(18)
@@ -71,7 +90,16 @@ struct CustomToolDetailView: View {
             }
             .textFieldStyle(.roundedBorder)
             Divider().padding(.vertical, 3)
-            Text("JavaScript").font(.headline)
+            HStack {
+                Text("JavaScript").font(.headline)
+                if ToolCatalog.command(id: model.definition.id) != nil {
+                    Text(model.definition.id)
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                        .help("This tool’s identifier is available to the script as api.id.")
+                }
+            }
             AuthoringTextEditor(text: $model.definition.source, label: "Custom tool JavaScript", monospaced: true)
             Text("preview(input, options, api) returns text or a result object. Custom buttons call perform(action, input, options, api).")
                 .font(.caption)
