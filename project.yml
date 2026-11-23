@@ -21,6 +21,18 @@ targets:
         excludes:
           - "Toolchord.entitlements"
           - "Info.plist"
+    # Xcode copies changed SwiftPM resources without invalidating the outer app
+    # signature. This declared resource output makes script-only edits re-sign it.
+    preBuildScripts:
+      - name: Track bundled tools for signing
+        inputFiles:
+          - "$(SRCROOT)/Sources/ToolchordCore/Scripts"
+        outputFiles:
+          - "$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/ToolScripts.sha256"
+        script: |
+          set -eu
+          cd "$SCRIPT_INPUT_FILE_0"
+          LC_ALL=C /usr/bin/shasum -a 256 */*.js > "$SCRIPT_OUTPUT_FILE_0"
     dependencies:
       - target: AuthoringProvider
         embed: true
@@ -39,6 +51,8 @@ targets:
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.developer-tools
         INFOPLIST_KEY_NSHumanReadableCopyright: "Public domain (The Unlicense)"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        USE_RECURSIVE_SCRIPT_INPUTS_IN_SCRIPT_PHASES: YES
+        ENABLE_ADDITIONAL_CODESIGN_INPUT_TRACKING_FOR_SCRIPT_OUTPUTS: YES
         CODE_SIGN_ENTITLEMENTS: App/Toolchord.entitlements
         CODE_SIGN_STYLE: Manual
         CODE_SIGN_IDENTITY: "-"
