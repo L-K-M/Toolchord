@@ -20,6 +20,26 @@ private final class AuthoringTestHost: AuthoringProviderAccess {
     private let suite = "ToolchordProviderTests." + UUID().uuidString
     private var defaults: UserDefaults { UserDefaults(suiteName: suite)! }
 
+    @Test func unappliedProviderEditsSurviveNavigationAndStayWithTheirEndpoint() {
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = AuthoringProviderSettings(defaults: defaults, host: AuthoringTestHost())
+        settings.select(.endpoint)
+        #expect(settings.useEndpoint("https://one.example/v1"))
+        let workspace = CustomToolWorkspace()
+        workspace.syncProviderForm(with: settings)
+        #expect(!workspace.hasPendingProviderEdits)
+        workspace.providerAddress = "https://two.example/v1"
+        workspace.providerKey = "unsent credential"
+
+        workspace.syncProviderForm(with: settings)
+        #expect(workspace.hasPendingProviderEdits)
+        #expect(workspace.providerKey == "unsent credential")
+        #expect(settings.useEndpoint(workspace.providerAddress))
+        workspace.syncProviderForm(with: settings)
+        #expect(workspace.providerKey.isEmpty)
+        #expect(!workspace.hasPendingProviderEdits)
+    }
+
     @Test func discoveryListsInstalledHarnessesAndPreservesSelection() async {
         defer { defaults.removePersistentDomain(forName: suite) }
         let host = AuthoringTestHost()

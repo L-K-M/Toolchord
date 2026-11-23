@@ -22,7 +22,7 @@ struct SearchField: NSViewRepresentable {
         let field = SearchTextField()
         field.isBordered = false
         field.drawsBackground = false
-        field.focusRingType = .none
+        field.focusRingType = .exterior
         field.lineBreakMode = .byTruncatingTail
         field.usesSingleLineMode = true
         field.cell?.isScrollable = true
@@ -31,7 +31,7 @@ struct SearchField: NSViewRepresentable {
         field.refusesFirstResponder = context.environment.isPalettePreview
         context.coordinator.apply(context.environment.paletteStyle, to: field)
         field.setAccessibilityLabel("Find a tool or paste input")
-        field.setAccessibilityHelp("Type to search tools. Press Command-V to attach the clipboard as input.")
+        field.setAccessibilitySubrole(.searchField)
         field.delegate = context.coordinator
         field.stringValue = session.query
         focus.searchField = field
@@ -46,9 +46,10 @@ struct SearchField: NSViewRepresentable {
         if !field.stringValue.hasSameUTF8(as: session.query) {
             field.stringValue = session.query
         }
-        if let id = session.selectedID {
-            field.setAccessibilityValueDescription(session.command(id)?.title)
-        }
+        // The field's accessibility value is the query being edited. Keep
+        // the current match in its help so VoiceOver can read both.
+        let selection = session.selectedCommand.map { "Selected: \($0.title)." } ?? "No tools found."
+        field.setAccessibilityHelp("\(selection) Use the arrow keys to select a tool. Press Return to open it or Command-V to attach clipboard input.")
     }
 
     @MainActor
@@ -84,6 +85,7 @@ struct SearchField: NSViewRepresentable {
 
         func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
             if textView.hasMarkedText() { return false }
+            let previousSelection = session.selectedID
             switch selector {
             case #selector(NSResponder.moveDown(_:)):
                 session.moveSelection(by: 1)
@@ -99,10 +101,19 @@ struct SearchField: NSViewRepresentable {
                 session.selectLast()
             case #selector(NSResponder.insertNewline(_:)):
                 onOpen()
+                return true
             case #selector(NSResponder.cancelOperation(_:)):
                 onEscape()
+                return true
             default:
                 return false
+            }
+            if session.selectedID != previousSelection, NSWorkspace.shared.isVoiceOverEnabled,
+               let title = session.selectedCommand?.title {
+                // Focus stays in the field while the arrow keys change rows.
+                NSAccessibility.post(element: control, notification: .announcementRequested, userInfo: [
+                    .announcement: title, .priority: NSAccessibilityPriorityLevel.medium.rawValue,
+                ])
             }
             return true
         }

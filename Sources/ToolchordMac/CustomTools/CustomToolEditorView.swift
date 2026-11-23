@@ -1,218 +1,125 @@
 import SwiftUI
-import ToolchordCore
+import UniformTypeIdentifiers
 
 struct CustomToolEditorView: View {
     @Bindable var model: CustomToolEditorModel
+    let workspace: CustomToolWorkspace
+    let onSelect: (String) -> Void
+    let onOpenFile: (URL) -> Void
+
+    init(model: CustomToolEditorModel, workspace: CustomToolWorkspace = CustomToolWorkspace(),
+         onSelect: ((String) -> Void)? = nil, onOpenFile: @escaping (URL) -> Void = { _ in }) {
+        self.model = model
+        self.workspace = workspace
+        self.onSelect = onSelect ?? model.selectDocument
+        self.onOpenFile = onOpenFile
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Picker("Tool", selection: Binding(get: { model.documentID }, set: { model.selectDocument($0) })) {
-                    Text("New Custom Tool").tag("new")
-                    ForEach(model.library.definitions, id: \.id) { definition in
-                        Text(definition.title).tag(definition.id)
-                    }
-                }
-                .frame(maxWidth: 360)
-                .disabled(model.isBusy || model.isDirty)
-                Button("Revert Changes") { model.revert() }
-                    .disabled(!model.isDirty || model.isBusy)
-                Spacer()
-                if model.isBusy {
-                    ProgressView().controlSize(.small)
-                    Button("Cancel") { model.cancelWork() }
-                }
-                Button(model.expected == nil ? "Save Tool" : "Update Tool") { model.save() }
-                    .keyboardShortcut("s", modifiers: .command)
-                    .disabled(!model.canSave)
-            }
-
+        VStack(spacing: 0) {
             if let problem = model.library.loadProblem {
-                HStack(alignment: .top) {
+                HStack(alignment: .firstTextBaseline) {
                     Image(systemName: "exclamationmark.triangle")
+                        .foregroundStyle(.orange)
                     ScrollView {
                         Text(problem)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .textSelection(.enabled)
                     }
-                    .frame(maxHeight: 80)
+                    .frame(maxHeight: 56)
                     Button("Reload Saved Tools") { model.library.reload() }
                         .disabled(model.isBusy)
                 }
                 .font(.callout)
-                .foregroundStyle(.red)
-            }
-
-            HStack(alignment: .top, spacing: 18) {
-                ScrollView {
-                    authoring
-                        .padding(.trailing, 6)
-                }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(10)
                 Divider()
-                sample
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+            HSplitView {
+                if workspace.showsSidebar {
+                    library
+                        .frame(minWidth: 144, idealWidth: 178, maxWidth: 220)
+                }
+                CustomToolDetailView(model: model, workspace: workspace)
+                    .id(model.definition.id)
+                    .frame(minWidth: 380, maxWidth: .infinity, maxHeight: .infinity)
+                if workspace.showsInspector {
+                    CustomToolSampleInspector(model: model)
+                        .id(model.definition.id)
+                        .frame(minWidth: 218, idealWidth: 274, maxWidth: 440, maxHeight: .infinity)
+                }
+            }
+            Divider()
+            status
+        }
+        .environment(workspace)
+        .environment(model)
+        .frame(minWidth: 820, minHeight: 540)
+        .onDrop(of: [.fileURL], isTargeted: nil) { providers in
+            guard providers.count == 1, let provider = providers.first, provider.canLoadObject(ofClass: URL.self) else { return false }
+            _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                guard let url, url.isFileURL else { return }
+                Task { @MainActor in onOpenFile(url) }
+            }
+            return true
+        }
+    }
 
-            if let message = model.message {
-                Label(message, systemImage: model.isError ? "exclamationmark.triangle" : "info.circle")
-                    .font(.callout)
-                    .foregroundStyle(model.isError ? Color.red : Color.secondary)
-                    .textSelection(.enabled)
+    private var library: some View {
+        List(selection: Binding<String?>(
+            get: { model.documentID },
+            set: { if let id = $0, id != model.documentID { onSelect(id) } }
+        )) {
+            Section("Library") {
+                Label(model.documentID == "new" && model.isDirty ? draftTitle : "New Tool", systemImage: "square.and.pencil")
+                    .lineLimit(1)
+                    .tag("new")
+            }
+            Section("Saved Tools") {
+                if model.library.definitions.isEmpty {
+                    Text("Saved tools appear here.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .selectionDisabled()
+                }
+                ForEach(model.library.definitions, id: \.id) { tool in
+                    Label(tool.id == model.documentID ? draftTitle : tool.title, systemImage: "wrench")
+                        .lineLimit(1)
+                        .tag(tool.id)
+                        .help(tool.summary.isEmpty ? tool.title : tool.summary)
+                }
+            }
+        }
+        .listStyle(.sidebar)
+        .accessibilityLabel("Tool library")
+    }
+
+    private var draftTitle: String {
+        model.definition.title.isEmpty ? "Untitled Tool" : model.definition.title
+    }
+
+    private var status: some View {
+        HStack(spacing: 7) {
+            if model.isBusy {
+                ProgressView().controlSize(.small)
+                Text(model.isGenerating ? "Generating tool…" : "Running sample…")
+            } else if let message = model.message {
+                Image(systemName: model.isError ? "exclamationmark.triangle" : "info.circle")
+                    .foregroundStyle(model.isError ? Color.orange : Color.secondary)
+                Text(message).textSelection(.enabled)
             } else {
                 Text(model.hasPendingDescription
-                     ? "Your description is pending. Generate it, or Revert Changes to discard it."
-                     : "Run the current draft successfully on your sample to enable Save. Samples stay in memory.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .padding(20)
-        .frame(minWidth: 820, minHeight: 620)
-    }
-
-    private var authoring: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Describe your tool").font(.headline)
-            TextEditor(text: $model.description)
-                .font(.body)
-                .frame(height: 65)
-                .border(.separator)
-                .accessibilityLabel("Describe the custom tool")
-            AuthoringProviderControls(model: model)
-            TextField("Tool title", text: $model.definition.title)
-                .textFieldStyle(.roundedBorder)
-            TextField("Summary", text: $model.definition.summary)
-                .textFieldStyle(.roundedBorder)
-            Text("JavaScript").font(.headline)
-            TextEditor(text: $model.definition.source)
-                .font(.system(size: 12, design: .monospaced))
-                .autocorrectionDisabled()
-                .frame(height: 240)
-                .border(.separator)
-                .accessibilityLabel("Custom tool JavaScript")
-            Text("Define preview(input, options, api) to return text or a result object. Custom buttons call perform(action, input, options, api).")
-                .font(.caption).foregroundStyle(.secondary)
-            DisclosureGroup("Custom buttons and clipboard access") {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("One button per line: action-id | Button Title")
-                        .font(.caption).foregroundStyle(.secondary)
-                    TextEditor(text: $model.actionLines)
-                        .font(.system(size: 12, design: .monospaced))
-                        .frame(height: 50)
-                        .border(.separator)
-                        .accessibilityLabel("Custom buttons, action ID and title per line")
-                    Toggle("Allow buttons to write the clipboard", isOn: $model.allowsClipboardWrite)
-                    Text("Only clicking a custom button can request api.clipboard.writeText(text). Preview and sample trials do not change the system clipboard.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                .padding(.top, 6)
-            }
-            DisclosureGroup("Options and generators") {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Options JSON: [{\"id\":\"uppercase\",\"label\":\"Uppercase\",\"defaultValue\":\"false\"}]. Add choices: [{\"id\":\"value\",\"label\":\"Value\"}] for a choice control.")
-                        .font(.caption).foregroundStyle(.secondary)
-                    TextEditor(text: $model.optionsJSON)
-                        .font(.system(size: 12, design: .monospaced))
-                        .frame(height: 65)
-                        .border(.separator)
-                        .accessibilityLabel("Custom tool options JSON")
-                    TextField("Regenerate button title (leave empty for a text tool)", text: $model.regenerateTitle)
-                        .textFieldStyle(.roundedBorder)
-                    Text("Generators use api.seed for a value that stays stable until Regenerate.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                .padding(.top, 6)
-            }
-        }
-        .disabled(model.isBusy)
-    }
-
-    private var sample: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("Sample input").font(.headline)
-                Spacer()
-                Button("Run Sample") { model.runSample() }
-                    .keyboardShortcut(.return, modifiers: .command)
-                    .disabled(model.isBusy)
-                if !model.draftActions.isEmpty {
-                    Menu("Try Button") {
-                        ForEach(model.draftActions, id: \.id) { action in
-                            Button(action.title) { model.tryAction(action.id) }
-                        }
-                    }
-                    .disabled(model.isBusy)
-                }
-            }
-            TextEditor(text: $model.sampleInput)
-                .font(.system(size: 12, design: .monospaced))
-                .autocorrectionDisabled()
-                .frame(minHeight: 90, maxHeight: 190)
-                .border(.separator)
-                .accessibilityLabel("Sample input for the custom tool")
-                .disabled(model.isBusy)
-            if !model.declaredOptions.isEmpty {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 8) {
-                        sampleOptionControls
-                    }
-                }
-                .frame(height: min(CGFloat(model.declaredOptions.count) * 32, 160))
-            }
-            Text(model.trialWasAction ? "Button would copy" : "Sample result").font(.headline)
-            if let result = model.trialResult {
-                if let output = result.output {
-                    Text(output.status).font(.callout).foregroundStyle(.secondary)
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text(output.primaryText.isEmpty ? "(empty result)" : output.primaryText)
-                                .font(.system(size: 12, design: .monospaced))
-                            ForEach(output.fields) { field in
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(field.label).font(.caption).foregroundStyle(.secondary)
-                                    Text(field.value).font(.system(size: 12, design: .monospaced))
-                                }
-                            }
-                            ForEach(Array(output.warnings.enumerated()), id: \.offset) { _, warning in
-                                Text(warning).font(.callout).foregroundStyle(.orange)
-                            }
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(10)
-                        .textSelection(.enabled)
-                    }
-                    .border(.separator)
-                } else {
-                    Text(result.problem ?? "The sample failed.")
-                        .foregroundStyle(.red)
-                        .textSelection(.enabled)
-                }
-            } else {
-                Text("Run your draft to see its output here.")
-                    .foregroundStyle(.secondary)
+                     ? "Generate your description to apply it to this tool."
+                     : "Run a sample successfully to enable Save.")
             }
             Spacer(minLength: 0)
-        }
-    }
-
-    private var sampleOptionControls: some View {
-        ForEach(model.declaredOptions, id: \.id) { option in
-            if let choices = option.choices {
-                Picker(option.label, selection: Binding(
-                    get: { model.sampleOptions[option.id] ?? option.defaultValue },
-                    set: { model.sampleOptions[option.id] = $0 }
-                )) {
-                    ForEach(choices, id: \.id) { choice in Text(choice.label).tag(choice.id) }
-                }
-                .disabled(model.isBusy)
-            } else {
-                Toggle(option.label, isOn: Binding(
-                    get: { (model.sampleOptions[option.id] ?? option.defaultValue) == "true" },
-                    set: { model.sampleOptions[option.id] = $0 ? "true" : "false" }
-                ))
-                .disabled(model.isBusy)
+            if model.isBusy {
+                Button("Cancel") { model.cancelWork() }
+                    .controlSize(.small)
             }
         }
+        .font(.callout)
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 7)
     }
 }

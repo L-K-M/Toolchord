@@ -107,7 +107,7 @@ struct GeneralSettingsView: View {
 
             Section("Privacy") {
                 Label {
-                    Text("Toolchord processes everything on this Mac and has no network access. It reads the clipboard only when you paste, keeps your input in memory only while the palette is open, and never stores or logs it. Results you copy go to the system clipboard, which macOS may share with your other devices through Universal Clipboard. Generated random strings stay on this Mac and are marked as confidential for clipboard history apps.")
+                    Text("Palette input and samples stay on this Mac. When you generate a tool with an external provider, it receives your description and, for revisions, the current tool definition. Toolchord reads the clipboard only when you paste, keeps your input in memory only while the palette is open, and never stores or logs it. Results you copy go to the system clipboard, which macOS may share with your other devices through Universal Clipboard. Generated random strings stay on this Mac and are marked as confidential for clipboard history apps.")
                         .fixedSize(horizontal: false, vertical: true)
                 } icon: {
                     Image(systemName: "lock.shield")
@@ -185,7 +185,7 @@ struct WelcomeView: View {
                 step(3, "Press ⌘↵ to copy the result and go straight back to your work. Press ↵ to open a tool with an editor.")
             }
 
-            Label("Toolchord processes everything on this Mac, has no network access, and reads the clipboard only when you paste. Results you copy go to the system clipboard.", systemImage: "lock.shield")
+            Label("Palette input and samples stay on this Mac. For custom tools, you choose which provider receives your description and the tool you’re revising.", systemImage: "lock.shield")
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
