@@ -117,9 +117,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         let item = statusItem ?? NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         statusItem = item
         if let button = item.button {
-            let image = NSImage(systemSymbolName: "command.square", accessibilityDescription: "Toolchord")
+            let image = Bundle.module.url(forResource: "Wrench", withExtension: "svg").flatMap(NSImage.init(contentsOf:))
+                ?? NSImage(systemSymbolName: "wrench.fill", accessibilityDescription: "Toolchord")
+            image?.size = NSSize(width: 18, height: 18)
             image?.isTemplate = true
             button.image = image
+            button.setAccessibilityLabel("Toolchord")
             button.toolTip = "Toolchord (\(preferences.shortcut.displayString))"
         }
         let menu = NSMenu()
